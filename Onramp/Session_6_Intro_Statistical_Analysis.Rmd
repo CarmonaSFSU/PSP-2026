@@ -1,0 +1,320 @@
+---
+title: "Introduction to Statistical Analysis"
+author: "Nancy Carmona & Rochelle-Jan Reyes"
+date: "2025-10-24"
+output: pdf_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r set_knitr_options, echo=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# **Session 6 - Introduction to Statistical Analysis in R**
+
+In this session you will learn:
+
+-   Utilize base R functions and packages for statistical analyses.
+-   Implement different types of statistical analyses methods, including
+    simple analytics and comparative tests.
+-   Complete a statistical analysis in a real-world context through
+    examples and demos.
+
+## [***PPT Materials***]{.underline}
+
+Here is the link to the Session 6 PPT. Feel free to use it as a
+reference when going through this RMD file:
+<https://docs.google.com/presentation/d/1dRIoI1cY5FXBbT89_Q4IsfuMQlqnlm34hY7UsrZ4NI8/edit?usp=sharing>
+
+## [***R Functions***]{.underline}
+
+Here is the link to the R Function Dictionary, with all of the functions
+you will need for this session under the Session 5 header:
+<https://docs.google.com/document/d/1z6agvbE-X70prlIdyFpU4-WkyI0IGI0WL5meEaQYz3o/edit?usp=sharing>
+
+## A) Statistics Review
+
+"Health statistics are numbers that summarize information related to
+health." (National Library of Medicine)
+
+-   Understand risk factors for communities
+
+-   Track and monitor health events
+
+-   See impacts of policy changes
+
+-   Assess the quality and safety of health care
+
+-   Used for evidence-informed policy making and evidence-based medicine
+
+-   Statistics is a branch of mathematics that deals with the
+    manipulation, analysis, and interpretation of data (Merriam-Webster)
+
+-   Used in many different fields, including public health,
+    epidemiology, and social sciences among other fields
+
+Types of Statistical Studies \* Descriptive statistics \* Inferential
+statistics
+
+## [***Activity 1 - Descriptive Statistics in Base R***]{.underline}
+
+First, as always, let's load in libraries (if any) and data.
+
+```{r}
+
+# load data 
+ncha <- read.csv("Data/NCHA2021_Session3_5_Subset.csv")
+
+```
+
+Okay, now we can go through some descriptive statistics.
+
+Remember that descriptive statistics [*describe*]{.underline} what the
+data is. Inferential statistics is used to [*infer (draw)
+conclusions*]{.underline} from the data.
+
+Let's look at the dataset really quickly. How do we *view* the data?
+
+```{r}
+
+```
+
+Now let's look at age. What *class* is the variable AGE?
+
+ANSWER:
+
+Time to use some functions we've learned in section A to describe the
+data.
+
+### Mean, Median, and Mode
+
+First, let's look at mean (average). Which function can you use for
+finding the average value in the variable AGE?
+
+```{r}
+
+```
+
+*Note*: will need to include na.rm = TRUE.
+
+Now, we can look at the median.
+
+```{r}
+
+```
+
+Lastly, we can look at mode. Normally, functions of what you need are
+named simply, like mean = mean() and median = median(). Mode is one of
+the few that aren't. You can find the mode (most of the same number of
+that variable) by using the *table()* function.
+
+```{r}
+
+table(ncha$AGE)
+
+```
+
+Is the mean, median, and mode the same number? If it's not the same
+number, then the data may be skewed! We can visualize this by using the
+base R plotting function, *hist()*.
+
+```{r}
+
+
+```
+
+Which way is it skewed?
+
+### Standard Deviation and Variance
+
+Standard deviation (SD): how dispersed the data is in relation to the
+mean
+
+```{r}
+
+
+```
+
+Variance: expected value of the squared deviation from the mean
+
+```{r}
+
+```
+
+Great job! That's it for Activity 1 in Session 6.
+
+## B) Statistical Analyses in R
+
+*Key Steps for your Analysis*
+
+-   Set up analysis code
+
+-   Exploratory Analysis
+
+-   Data Wrangling
+
+-   Conduct descriptive analysis
+
+-   Conduct inferential analysis
+
+-   Document your analysis!
+
+## C) Demo & Activity: Applying Descriptive Statistics
+
+Install & Load *tidyverse* package
+
+```{r}
+
+# load the package "tidyverse" to wrangle data
+
+library(tidyverse)
+
+```
+
+Explore the NCHA dataset! What does your data structure look like?
+
+```{r}
+
+# View the structure of the dataset after it has been imported and saved to your working environment
+
+glimpse(ncha)
+
+```
+
+Explore the NCHA dataset! What does your data structure look like?
+
+# Tidyverse also has functions which we can use to "summarize" our data
+
+```{r}
+
+# we can use statistical functions and combine them together 
+
+# summarise is a tidyverse functions 
+
+# we can save our table in an object
+
+ncha_summary_table <- ncha %>% 
+  
+  # group by and calculate summary statistics
+  summarise(Min = min(MIN_MOD_PA, na.rm = TRUE), 
+            Max = max(MIN_MOD_PA, na.rm = TRUE), 
+            Mean = mean(MIN_MOD_PA, na.rm = TRUE),
+            Median = median(MIN_MOD_PA, na.rm = TRUE), 
+            missing = sum(is.na(MIN_MOD_PA)), 
+            .groups = "drop") %>% 
+  
+  # round by mutating on a predicate function
+  mutate_if(is.numeric, round, 3)
+
+```
+
+## D) Demo & Activity: Applying Inferential Statistics
+
+Now, let’s say we are working on a project to examine whether the number
+of minutes of moderate physical activity differs between SFSU college
+students who have ever used cannabis and those who have not.
+
+We can use data from the American College Health Association – National
+College Health Assessment (ACHA-NCHA) which we used in Session 5.
+
+I have two variables of interest:
+
+-   "Substances ever used - Cannabis (marijuana, weed, hash, edibles,
+    vaped cannabis, etc.) [nonmedical use]"
+
+-   "Minutes of moderate physical activity in the last 7 days"
+
+**Step 1: Data Wrangling**
+
+Now, let’s create a data frame with our analysis variables from the main
+dataset
+
+```{r}
+
+# Data Wrangling for Inferential Analysis
+
+# Make subset with your variables of interest
+ncha_subset <- ncha %>% select(SUB_ANY_CANNABIS, MIN_MOD_PA)
+
+
+# Filter out observations that are not Yes or No & any observations that are missing minutes of moderate physical activity data
+ncha_subset <- ncha_subset %>%
+  filter(SUB_ANY_CANNABIS %in% c("Yes", "No")) %>%
+  filter(!is.na(MIN_MOD_PA))
+
+```
+
+**Step 2. Descriptive Statistics**
+
+We can look at the mean and standard deviation of each group
+
+```{r}
+
+# Descriptive statistics for Minutes of Moderate Physical Activity by Ever Using Cannabis 
+
+descriptive_stats <- ncha_subset %>%
+  group_by(SUB_ANY_CANNABIS) %>%
+  summarize(
+    Mean_Min_Mod_PA = mean(MIN_MOD_PA, na.rm = TRUE),
+    SD_Min_Mod_PA = sd(MIN_MOD_PA, na.rm = TRUE),
+    n = n()
+  )
+
+descriptive_stats
+
+
+```
+
+**Step 3: Conduct Statistical Test**
+
+Now let's conduct the t-test!
+
+```{r}
+
+# Conduct a two sample t - test 
+t.test(MIN_MOD_PA ~ SUB_ANY_CANNABIS, data = ncha_subset)
+
+```
+
+-   What is the p-value?
+
+-   Are the result's statistically significant?
+
+**Step 4. Visualize data we used in inferential test**
+
+We can visualize our data in a boxplot using ggplot()!
+
+```{r}
+
+# Visualizing t-test with boxplots 
+
+ggplot(ncha_subset, aes(x = SUB_ANY_CANNABIS, y = MIN_MOD_PA, fill =SUB_ANY_CANNABIS )) +
+  geom_boxplot() +
+  labs(
+    title = "Moderate Physical Activity by Cannabis Status (NCHA)",
+    x = "Cannabis Status",
+    y = "Weekly Moderate Physical Activity (minutes)") +
+         theme(legend.position = "none") 
+
+```
+
+
+
+# Session Information and Code
+
+The next two chunks should be included in the appendix of every R
+Markdown so that you document your session information, and code in the
+document. This supports the reproducibility of your work!
+
+```{r session.info}
+#-----session information: beginning of Appendix -----------
+# This promotes reproducibility by documenting the version of R and every package
+# you used.
+sessionInfo()
+```
+
+```{r appendix, ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE, include=TRUE}
+#-----appendix------------
+```
