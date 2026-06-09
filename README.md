@@ -1,4 +1,4 @@
-PINC 2026 - Environmental Health Team
+## PINC 2026 - Environmental Health Team
 
 Welcome! This GitHub repository will be used to share project files, including R Markdown files, examples, and data files.
 
