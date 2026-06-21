@@ -1,0 +1,151 @@
+---
+title: "Historical Redlining in San Francisco"
+author: "Nancy Carmona"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+#-----setup options-----
+
+# clear the workspace
+rm(list = ls())
+
+# knitr options, shows the code in the knitted HTML file 
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+
+```{r load_libraries, echo=FALSE, include=FALSE, eval=TRUE}
+#-----load libraries pacman-----
+
+# load pacman, installing if needed
+if (!require("pacman")) {install.packages("pacman")}
+
+# load other packages, installing as needed
+pacman::p_load(tidyverse, sf, leaflet, tigris)
+
+
+```
+
+# Introduction
+
+This map uses historical Home Owners' Loan Corporation (HOLC) redlining data for San Francisco from the [Mapping Inequality project](https://dsl.richmond.edu/panorama/redlining/data/CA-SanFrancisco).
+
+The HOLC assigned neighborhood grades that were used to describe perceived mortgage lending risk. These grades reflected discriminatory housing and lending practices and contributed to patterns of racial and economic inequality.
+
+HOLC grades were assigned as:
+
+- **A** = Best
+- **B** = Still desirable
+- **C** = Definitely declining
+- **D** = Hazardous
+
+## Loading Grade Data
+
+First we load the mapping data. The file we are using is a **JSON file**, which is a common file format for storing data. JSON files can store regular data columns, like city names and HOLC grades, and they can also store spatial information, such as the coordinates needed to draw shapes on a map.
+
+When we read this file using `read_sf()`, R recognizes it as a spatial dataset.
+
+A spatial file should have:
+
+1. A geometry column
+2. A coordinate reference system
+3. A geometry type, such as `POLYGON` or `MULTIPOLYGON`
+
+
+```{r load_data, include = FALSE}
+#-----load data-----
+
+# save the file path in one object, to make it easier to edit later
+
+redlining_file <- "~/Library/Mobile Documents/com~apple~CloudDocs/Documents/SFSU Faculty/PINC/PINC 2026/PSP-2026/Data/mappinginequality.json"
+
+# read the spatial data 
+redlining <- read_sf(redlining_file)
+
+# check what kind of object this is
+class(redlining)
+
+# check the coordinate reference system
+st_crs(redlining)
+
+# check the geometry type
+st_geometry_type(redlining)
+
+# look at the first few rows of the data
+head(redlining)
+
+```
+
+```{r check.data, include = FALSE}
+ # select only San Francisco 
+sf_redlining <- redlining %>% filter (city == "San Francisco") %>% 
+  st_transform(4326)
+
+# Note: Mapping requires longitude/latitude coordinates
+# Our data are already WGS 84, but showing the transform step so you are aware
+
+
+# view first rows 
+head(sf_redlining)
+
+# check the HOLC grades 
+table(sf_redlining$grade, useNA = "ifany")
+
+# remove NA
+sf_redlining <- sf_redlining %>%
+  filter(!is.na(grade))
+
+# check the HOLC grades after filtering
+table(sf_redlining$grade, useNA = "ifany")
+
+```
+
+
+```{r map_colors, echo = FALSE}
+
+# Create colors for each HOLC grade
+holc_colors <- c(
+  "A" = alpha("green", 0.6),
+  "B" = alpha("blue", 0.6),
+  "C" = alpha("yellow", 0.6),
+  "D" = alpha("red", 0.6)
+)
+
+# Tell leaflet how to match grades to colors
+holc_palette <- colorFactor(
+  palette = holc_colors,
+  domain = sf_redlining$grade
+)
+
+```
+
+```{r leaflet}
+
+# Create the interactive map
+
+leaflet(sf_redlining) %>%
+  addTiles() %>%
+  setView(
+    lng = -122.4194,
+    lat = 37.7749,
+    zoom = 12
+  ) %>%
+  addPolygons(
+    fillColor = ~holc_palette(grade),
+    fillOpacity = 0.7,
+    color = "white",
+    weight = 1,
+    popup = ~paste0(
+      "<strong>HOLC Grade:</strong> ", grade
+    )
+  ) %>%
+  addLegend(
+    pal = holc_palette,
+    values = ~grade,
+    title = "HOLC Grade",
+    opacity = 0.7
+  )
+
+```
