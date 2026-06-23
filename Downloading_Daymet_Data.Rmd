@@ -18,7 +18,7 @@ opts_chunk$set(tidy = FALSE, echo = TRUE, message = FALSE)
 if (!require("pacman")) { install.packages("pacman", repos = "http://cran.r-project.org") }
 
 # Load other packages, installing as needed.
-pacman::p_load(tidyverse, dplyr, httr, jsonlite, tigris, sf, gstat, daymetr)
+pacman::p_load(tidyverse, dplyr, httr, jsonlite, tigris, sf, gstat, daymetr, data.table, stringr)
 
 ```
 
@@ -72,7 +72,7 @@ write.csv(sf_centroid_df, "Data/sf_centroids.csv", row.names = FALSE)
 
 The download_daymet_batch function from the daymetr R package allows users to download Daymet data for multiple locations in a single batch. Users provide a table of site information (with site names, latitude, and longitude), and the function retrieves daily weather data (e.g., temperature, precipitation) for each site over specified years. It’s useful for efficiently collecting climate data for many locations at once.
 
-```{r daymet.download, eval = TRUE}
+```{r daymet.download, eval = FALSE}
 
 # warning: downloading data takes a LONG time to run, so only run once, set chunk to eval = FALSE to help prevent it from running again 
 
@@ -85,14 +85,23 @@ start = 1982,
 end = 2022,
 simplify = TRUE)
 
-sf_daymet <- df_batch 
+
+
+# when downloading this directly and working from batch file you will have all characters and will need to change all except measurement to numeric 
+
+# sf_daymet <- df_batch %>% mutate(across(-measurement, as.numeric))
+# If you are running from the cleaned csv file below you will not need this step and the CSV will save everything as numeric except the measurement variable 
+
 ```
 
 ### Data wrangling
 
 We now need to fix the names of the measurement types.
 
-```{r data.wrangling, echo = FALSE}
+```{r data.wrangling, eval = FALSE}
+
+# renaming it for wrangling file 
+sf_daymet <- df_batch 
 
 # what are the names of each category? use unique to find the names  
 unique(sf_daymet$measurement)
@@ -112,20 +121,20 @@ sf_daymet <- sf_daymet %>%
 unique(sf_daymet$measurement)
 
 # check dimensions, quick check of the number of rows 
-dim(sf_daymet) # 14839442
+dim(sf_daymet) 
 
 # remove the level that does not have estimates 
 sf_daymet <- sf_daymet %>%
   filter(!grepl("outside DAYMET spatial coverage", measurement))
 
 # check dimensions, quick check of the number of rows 
-dim(sf_daymet) # 14839440
+dim(sf_daymet) 
 
 # check names again 
 unique(sf_daymet$measurement)
 
 # save a csv with the cleaned up data 
-write.csv(sf_daymet, "Data/sf_daymet_clean.csv", row.names = FALSE)
+# write.csv(sf_daymet, "Data/sf_daymet_clean.csv", row.names = FALSE)
 
 ```
 
@@ -172,7 +181,7 @@ Definitions:
 
 # Step 0: Load downloaded and pre-processed clean daymet data
 
-# sf_daymet <- read_csv("Data/sf_daymet_clean.csv")
+sf_daymet <- read_csv("Data/sf_daymet_clean.csv")
 
 ```
 
@@ -181,7 +190,9 @@ Water vapor pressure vp Pa Water vapor pressure in pascals. Daily average partia
 We need to transform the vp variable from pascals to kilopascals. We divide the pressure value by 1000.
 
 ```{r apparent.temperature, echo = FALSE}
-#  unique(sf_daymet$measurement)
+
+# check variables in measurement  
+unique(sf_daymet$measurement)
 # [1] "dayl" "prcp" "srad" "swe"  "tmax" "tmin" "vp" 
 
 #Calculate tmean
@@ -214,184 +225,203 @@ long_temp <- temp_data %>%
                names_to = "measurement",
                values_to = "value")
 
-# Calculate 97.5th percentile per site & measurement
-
-# tenyear_percentiles <- long_temp %>%
-#   filter(year >= 2000 & year <= 2010) %>%     # Optional: first 10 years of data 
-#   group_by(site, measurement) %>%
-#   mutate(p97_5 = quantile(value, probs = 0.975, na.rm = TRUE), # percentiles are VERY similar when looking at 2000s
-#             p85 = quantile(value, probs = 0.85, na.rm = TRUE))
-# 
-
-
-percentiles <- long_temp %>%
-  filter(year >= 2000 & year <= 2020) %>%     # using 2000-2020 data in analysis 
-  group_by(site, measurement) %>%
-  mutate(p97_5 = quantile(value, probs = 0.975, na.rm = TRUE),
-            p85 = quantile(value, probs = 0.85, na.rm = TRUE))
-
-
-# filtering to only keep the AT data 
-percentiles <- percentiles %>% filter(measurement == "AT")
-
 
 ```
 
-How many "hot days" do we have per year per site (by year)?
+## Creating baseline and present-day temperature datasets
 
-```{r hot.days, echo= FALSE}
+To compare recent temperature patterns with historical conditions, we divided the Daymet temperature data into two time periods. The baseline period represents the historical temperature record and includes years 1982 through 2012. This period is used to estimate typical or “normal” temperature conditions for each census tract.
 
-# Add threshold and flag hot days
-long_temp_flagged <- percentiles %>%
-  mutate(hot_day_85 = value >= p85,
-         hot_day_97_5 = value >= p97_5)
+The present-day period includes years 2012 through 2022. This period is used to examine more recent temperature patterns and identify heatwave days relative to the historical baseline.
 
-# count how many days are flagged as hot days 
-hot_days_summary <- long_temp_flagged %>%
-  group_by(site, year) %>%
-  summarise(
-    n_hot_day_85 = sum(hot_day_85, na.rm = TRUE),
-    n_hot_day_97_5 = sum(hot_day_97_5, na.rm = TRUE),
-    .groups = "drop"
-  )
+In this step, we filtered the full Daymet dataset into separate baseline and present-day datasets. We kept the apparent temperature variable (`AT`) and reshaped the data from long format to wide format so that each row represents a site-day with its corresponding temperature value. We also created a calendar date variable from the year and day-of-year fields, which makes it easier to work with daily time series data.
 
-# View first six rows of summary
-head(hot_days_summary)
+```{r baseline_normal, include = FALSE}
+
+# Create baseline temperatures (30 year normal)
+# This period represents the long-term temperature record used to define
+# typical or "normal" temperature conditions for each site.
+daymet_baseline <- long_temp %>%
+  filter(year >= 1982 & year <= 2012) 
 
 
-# visualizing
+# Create present temperatures  
+# This period will be compared against the baseline to identify recent
+# heatwave days and heatwave events.
+daymet_present <- long_temp %>%
+  filter(year >= 2012 & year <= 2022) 
 
 
-# ggplot(hot_days_summary, aes(x = year)) +
-#   geom_line(aes(y = n_hot_day_85, color = "85th percentile")) +
-#   geom_line(aes(y = n_hot_day_97_5, color = "97.5th percentile")) +
-#   facet_wrap(~ site, scales = "free_y") +
-#   labs(
-#     title = "Number of Hot Days per Year by Site",
-#     x = "Year", y = "Number of Hot Days",
-#     color = "Threshold"
-#   ) +
-#   theme_minimal() + 
-#  theme(plot.title = element_text(hjust = 0.5))
+#str(daymet_baseline)
+#unique(daymet_baseline$site)
 
+# Filter and transform data to wide format; get the mean AT using tmin
+# Can adjust if necessary later.
 
-
-
-# Reshape for plotting
-# hot_days_summary_long <- hot_days_summary %>%
-#   pivot_longer(cols = starts_with("n_hot_day"),
-#                names_to = "threshold", values_to = "count")
-# 
-# ggplot(hot_days_summary_long, aes(x = factor(year), y = count, fill = threshold)) +
-#   geom_col(position = "dodge") +
-#   facet_wrap(~ site, scales = "free_y") +
-#   labs(
-#     title = "Number of Hot Days per Year by Threshold",
-#     x = "Year", y = "Count",
-#     fill = "Threshold"
-#   ) +
-#   theme_minimal()  + 
-#  theme(plot.title = element_text(hjust = 0.5))
-
-
-
-# averages across city - average number of hot days per year 
-hot_days_avg <- hot_days_summary %>%
-  group_by(year) %>%
-  summarise(
-    mean_hot_day_85 = mean(n_hot_day_85, na.rm = TRUE),
-    mean_hot_day_97_5 = mean(n_hot_day_97_5, na.rm = TRUE),
-    .groups = "drop"
-  ) 
-
-
-ggplot(hot_days_avg, aes(x = year)) +
-  geom_line(aes(y = mean_hot_day_85, color = "85th percentile")) +
-  geom_line(aes(y = mean_hot_day_97_5, color = "97.5th percentile")) +
-  labs(
-    title = "Average Number of Hot Days per Year Across All SF",
-    x = "Year", y = "Average Hot Days",
-    color = "Threshold"
-  ) +
-  theme_minimal()  + 
- theme(plot.title = element_text(hjust = 0.5))
-
-
-```
-
-Now lets calculate the heat waves! We will use the four definitions we described above.
-
-```{r heatwave.calculation, eval = FALSE}
-
-
-long_temp_flagged_new <- long_temp_flagged %>%
-  group_by(site, measurement, year) %>%
-  arrange(yday, .by_group = TRUE) %>%
+daymet_baseline_tmin <- daymet_baseline %>%
+  filter(measurement %in% c("AT")) %>%
+  pivot_wider(names_from = measurement, values_from = value) %>%
   mutate(
-    # Streaks of 2+ for hot_day_85
-    streak_85_2 = {
-      r <- rle(hot_day_85)
-      inverse.rle(list(
-        lengths = r$lengths,
-        values = r$values & r$lengths >= 2
-      ))
-    },
-    # Streaks of 3+ for hot_day_85
-    streak_85_3 = {
-      r <- rle(hot_day_85)
-      inverse.rle(list(
-        lengths = r$lengths,
-        values = r$values & r$lengths >= 3
-      ))
-    },
-    # Streaks of 2+ for hot_day_97_5
-    streak_97_5_2 = {
-      r <- rle(hot_day_97_5)
-      inverse.rle(list(
-        lengths = r$lengths,
-        values = r$values & r$lengths >= 2
-      ))
-    },
-    # Streaks of 3+ for hot_day_97_5
-    streak_97_5_3 = {
-      r <- rle(hot_day_97_5)
-      inverse.rle(list(
-        lengths = r$lengths,
-        values = r$values & r$lengths >= 3
-      ))
-    }
-  ) %>%
-  ungroup()
+    date = as.Date(paste(year, yday, sep = "-"), "%Y-%j")  )
 
-# Preview the result
-head(long_temp_flagged_new)
+daymet_present_wide <- daymet_present %>%
+  filter(measurement %in% c("AT")) %>%
+  pivot_wider(names_from = measurement, values_from = value) %>%
+  mutate(
+    date = as.Date(paste(year, yday, sep = "-"), "%Y-%j")  )
+
+# Save filtered dataframe to avoid needing to re-load initial baseline file
+write.csv(daymet_baseline_tmin, file = "Data/sf_daymet_filtered_1982_2012.csv", row.names = FALSE)
 
 ```
 
-```{r heatwave.counting, echo = FALSE}
+## Defining heatwave days and heatwave events
 
-# Helper function to count qualifying streaks
-count_streaks <- function(x, min_length) {
-  r <- rle(x)
-  sum(r$values & r$lengths >= min_length)
-}
+To identify heatwave days, We first calculated the 95th percentile of apparent temperature (`AT`) during the historical baseline period for each census tract. This creates a site-specific heat threshold, meaning that each tract is compared to its own historical temperature distribution rather than to a single citywide cutoff.
 
-# Main heat wave summary
-heat_wave_summary <- long_temp_flagged %>%
-  filter(measurement == "AT") %>%
-  group_by(site, year) %>%
-  arrange(yday, .by_group = TRUE) %>%  # ensure correct order
+After calculating the 95th percentile threshold, we joined the threshold values to the present-day temperature dataset. We then created a logical indicator, `hw95_day`, which identifies whether the apparent temperature on a given day was greater than or equal to the tract-specific 95th percentile threshold.
+
+Next, we identified consecutive heatwave days. This step is important because a heatwave is usually defined as a period of sustained extreme heat rather than a single isolated hot day. The event ID variable groups consecutive heatwave and non-heatwave periods within each census tract. We then calculated the length of each event and created indicators for heatwave periods lasting at least 2 days and at least 3 days.
+
+```{r percentiles, include = FALSE}
+
+# Calculate 95th percentile for 30-year avg
+tmin_95 <- daymet_baseline_tmin %>%
+  group_by(site) %>%
   summarise(
-    hw_2day_85   = count_streaks(hot_day_85, 2),
-    hw_3day_85   = count_streaks(hot_day_85, 3),
-    hw_2day_97_5 = count_streaks(hot_day_97_5, 2),
-    hw_3day_97_5 = count_streaks(hot_day_97_5, 3),
+    p95 = quantile(AT, 0.95)
+    )
+
+# Flagging heatwave days. hw95 returns T/F if tmin is >= 95th threshold.
+heatwaves <- daymet_present_wide %>%
+  left_join(tmin_95, by = "site") %>%
+  mutate(
+    hw95_day = AT >= p95   # flags heatwave days
+  )
+
+# Detect consecutive days. The rleid function gives heatwaves a unique ID from
+# non-heatwave days
+heatwaves <- heatwaves %>%
+  arrange(site, date) %>%
+  group_by(site) %>%
+  mutate(
+    hw_event_id = rleid(hw95_day), # custom function to assign event IDs
+    hw_event_len = ave(hw95_day, hw_event_id, FUN = length),
+    hw95_2day = hw95_day & hw_event_len >= 2,# TRUE for heatwaves that are 2+ days
+    hw95_3day = hw95_day & hw_event_len >= 3 # TRUE for heatwaves that are 3+ days
+  )
+
+```
+
+## Joining heatwave results to census tract geography
+
+To map the heatwave results, we joined the daily heatwave dataset to the San Francisco census tract shapefile. First, we renamed the census tract identifier (`GEOID`) to `site` so that it matched the site identifier used in the Daymet and heatwave datasets. I also renamed the internal point latitude and longitude variables to simpler names (`lat` and `lon`).
+
+Before merging, we converted the `site` variable in the heatwave dataset to a character variable. This is important because census tract identifiers are ID codes, not numeric values. If they are stored as numbers, leading zeros may be dropped. Since California census tract GEOIDs should be 11 digits, we added a leading zero to the heatwave `site` variable where needed so that it matched the format of the census tract GEOID.
+
+We then merged the census tract geometry with the heatwave dataset using the shared `site` variable. The census tract shapefile was used as the left dataset so that the final object retained the spatial geometry for mapping. We saved the merged heatwave dataset as a CSV file so that it can be reloaded later without repeating the full data cleaning and merging workflow.
+
+```{r merge_census_tracts_heatwaves, include = FALSE}
+
+# rename to merge census tracts with heatwaves 
+sf_tracts <- sf_tracts %>% 
+                        rename(site = GEOID,
+                               lat = INTPTLAT,
+                               lon = INTPTLON)
+
+
+
+# make site a character
+heatwaves$site <- as.character(heatwaves$site)
+
+# add leading zero to site variable 
+heatwaves <- heatwaves %>%
+  mutate(site = str_pad(as.character(site),
+                           width = 11,
+                           side = "left",
+                           pad = "0"))
+
+
+# merge census tract geography with heatwaves 
+sf_tracts_hw <- merge(
+  sf_tracts,
+  heatwaves,
+  by = "site",
+  all.x = TRUE
+)
+
+# Save heatwave file
+write.csv(sf_tracts_hw, file = "Data/heatwaves_2012_2022.csv", row.names = FALSE)
+
+```
+
+## Summarizing heatwaves by census tract and year
+
+After identifying heatwave days, we summarized the data to estimate the number of heatwave events for each census tract in each year. Because the dataset contains one row per day for each census tract, we counted the number of distinct heatwave event IDs rather than simply counting rows. This avoids counting multiple days from the same heatwave as separate heatwave events.
+
+We also calculated the total number of heatwave days per census tract and year. This gives two related but different measures: the number of heatwave events and the total number of days spent in heatwave conditions.
+
+The variable `n_heatwaves` represents the number of distinct heatwave events in a census tract during a given year. The variable `n_heatwave_days` represents the total number of days classified as heatwave days in that tract and year.
+
+```{r annual_heatwaves, include = FALSE}
+
+# heatwave events per year 
+heatwaves_by_site_year <- sf_tracts_hw %>%
+  st_drop_geometry() %>%
+  filter(hw95_day == TRUE) %>%
+  group_by(site, year) %>%
+  summarize(
+    n_heatwaves = n_distinct(hw_event_id),
+    n_heatwave_days = n(),
     .groups = "drop"
   )
 
-# save a copy of the heat wave data 
 
-# write.csv(heat_wave_summary, "Data/heat_wave_summary.csv", row.names = FALSE)
+# check 
+head(heatwaves_by_site_year)
 
-  
+heatwaves_by_site_year %>%
+  arrange(site, year)
+
+# Save heatwave file
+write.csv(heatwaves_by_site_year, file = "Data/heatwave_tractannual_2012_2022.csv", row.names = FALSE)
+
 ```
+
+## Visualizing annual heatwave patterns
+
+To examine how heatwave frequency changed over time, we calculated the average number of heatwave events per census tract for each year. This summary provides an overall view of temporal trends across San Francisco census tracts.
+
+The line plot shows year-to-year variation in the mean number of heatwave events per tract. Higher values indicate years when census tracts experienced more heatwave events on average, while lower values indicate years with fewer heatwave events.
+
+```{r visualization, echo = FALSE}
+
+heatwaves_year_summary <- heatwaves_by_site_year %>%
+  group_by(year) %>%
+  summarize(
+    mean_heatwaves = mean(n_heatwaves, na.rm = TRUE),
+    median_heatwaves = median(n_heatwaves, na.rm = TRUE),
+    max_heatwaves = max(n_heatwaves, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# line plot
+ggplot(heatwaves_year_summary, aes(x = year, y = mean_heatwaves)) +
+  geom_line() +
+  geom_point() +
+scale_x_continuous(
+  breaks = 2012:2022,
+  minor_breaks = NULL
+) +
+  labs(
+    title = "Average number of heatwaves per year across census tracts",
+    x = "Year",
+    y = "Mean number of heatwaves"
+  ) +
+  theme_minimal()
+
+```
+
+The figure suggests that the average number of heatwave events varied substantially across years. Some years had relatively low average heatwave counts, while others had noticeably higher values. This indicates that heatwave occurrence was not constant over the study period and that certain years may have experienced more frequent extreme heat events across San Francisco census tracts.
+
+Because this figure shows an average across census tracts, it summarizes the overall temporal pattern but does not show spatial differences between neighborhoods. 
