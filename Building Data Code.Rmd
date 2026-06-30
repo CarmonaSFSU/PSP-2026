@@ -1,91 +1,1179 @@
 ---
 title: "Building Data Code"
-author: "Mahal Bilaoen"
+author: "Mahal Bilaoen and Nancy Carmona"
 date: "`r Sys.Date()`"
 output: html_document
 ---
 
+
 ```{r setup, include=FALSE}
+#-----setup options-----
+
+# clear the workspace
+rm(list = ls())
+
+# knitr options, shows the code in the knitted HTML file 
 knitr::opts_chunk$set(echo = TRUE)
 
-pacman::p_load(tidyverse,lubridate,stringr)
 ```
 
-##About this data 
+
+```{r load_libraries, echo=FALSE, include=FALSE, eval=TRUE}
+#-----load libraries pacman-----
+
+# load pacman, installing if needed
+if (!require("pacman")) {install.packages("pacman")}
+
+# load other packages, installing as needed
+pacman::p_load(tidyverse, lubridate, stringr, tigris, sf, leaflet)
+
+
+```
+
+# Building Data Analysis 
+
 All of the data sets associated with this file are all publicly available via SF Data Portal, which is the city of San Francisco's go to site to obtain data on the city. There is a lot of data to sift through and organize, especially if we're looking at different building types and where they are. The originial goal of downloading all of these data sets was to: 
+
 1. Determine the A/C stock in the city 
 2. Organize the city by building type
 3. Identify where the city has the most heat exposure and determine vulnerability by A/C stock in a particular area and/or by building type/age 
 
-#loading in the data 
+# Loading in the data 
+
 Building permit data is separated by before and after 01/01/2013, and it will be used to look at where any A/C related renovations are located. Tax roll and building audit data was mainly used to separate buildings by type, depending on how specific buildings were to be organized. Both data sets provide information about the buildings that could be useful. Due to data privacy, some of this data is available only on the zipcode level. 
-```{r}
+
+```{r load_data}
 #building permit data
-before_2013 <- read.csv("~/PH 699 Bilaoen/Building_Permits_before_January_1,_2013_20260319.csv")
-after_2013 <- read.csv("~/PH 699 Bilaoen/Building_Permits_filed_on_or_after_January_1,_2013_20260319.csv")
+before_2013 <- read.csv("Data/Building_Permits_before_January_1,_2013_20260626.csv")
+
+after_2013 <- read.csv("Data/Building_Permits_filed_on_or_after_January_1,_2013_20260319.csv")
 
 #tax data (building type)
-tax_rolls <- read.csv("~/PH 699 Bilaoen/Assessor_Historical_Secured_Property_Tax_Rolls_20260319.csv")
+tax_rolls <- read.csv("Data/Assessor_Historical_Secured_Property_Tax_Rolls_20260319.csv")
 
 #energy compliance data (building type)
-building_audits <- read.csv("~/PH 699 Bilaoen/Existing_Buildings_-_Basic_Info_and_Audit_Compliance_Status_20260319.csv")
+building_audits <- read.csv(
+  "Data/Existing_Buildings_-_Basic_Info_and_Audit_Compliance_Status_20260319.csv"
+)
+
 ```
 
-#Wrangling A/C data 
+ 
+The permit data comes in two files: permits before 2013 and permits after 2013. We first cleaned them separately so they have the same column names, then combine them.
+
+```{r before_2013}
+
+# create new data set 
+# rename variables and select only the ones needed 
+
+before_2013_clean <- before_2013 %>%
+  mutate(
+    data_source = "before_2013",
+    
+    block_clean = str_pad(as.character(Block), width = 4, side = "left", pad = "0"),
+    lot_clean = str_pad(as.character(Lot), width = 3, side = "left", pad = "0"),
+    parcel_id = str_c(block_clean, lot_clean),
+    
+    permit_number = as.character(Permit.Number),
+    permit_type = as.character(Permit.Type),
+    permit_type_definition = Permit.Type.Definition,
+    
+    permit_creation_date = ymd_hms(Permit.Creation.Date, quiet = TRUE),
+    filed_date = ymd_hms(Filed.Date, quiet = TRUE),
+    issued_date = ymd_hms(Issued.Date, quiet = TRUE),
+    completed_date = ymd_hms(Completed.Date, quiet = TRUE),
+    
+    current_status = Current.Status,
+    description = Description,
+    
+    block = as.character(Block),
+    lot = as.character(Lot),
+    
+    street_number = as.character(Street.Number),
+    street_name = Street.Name,
+    street_suffix = Street.Suffix,
+    
+    zipcode = as.character(Zipcode),
+    supervisor_district = as.character(supervisor_district),
+    neighborhood = neighborhoods_analysis_boundaries,
+    
+    existing_use = Existing.Use,
+    proposed_use = Proposed.Use,
+    existing_units = as.numeric(Existing.Units),
+    proposed_units = as.numeric(Proposed.Units),
+    
+    estimated_cost = as.numeric(Estimated.Cost),
+    revised_cost = as.numeric(Revised.Cost),
+    
+    record_id = as.character(Record.ID),
+    
+    location = NA_character_,
+    longitude = NA_real_,
+    latitude = NA_real_
+  ) %>%
+  select(
+    data_source,
+    permit_number,
+    permit_type,
+    permit_type_definition,
+    permit_creation_date,
+    filed_date,
+    issued_date,
+    completed_date,
+    current_status,
+    description,
+    block,
+    lot,
+    block_clean,
+    lot_clean,
+    parcel_id,
+    street_number,
+    street_name,
+    street_suffix,
+    zipcode,
+    supervisor_district,
+    neighborhood,
+    existing_use,
+    proposed_use,
+    existing_units,
+    proposed_units,
+    estimated_cost,
+    revised_cost,
+    record_id,
+    location,
+    longitude,
+    latitude
+  )
+
+```
+
+
+```{r after_2013}
+
+# create new data set 
+# rename variables and select only the ones needed 
+
+after_2013_clean <- after_2013 %>%
+  mutate(
+    data_source = "after_2013",
+    
+    block_clean = str_pad(as.character(Block), width = 4, side = "left", pad = "0"),
+    lot_clean = str_pad(as.character(Lot), width = 3, side = "left", pad = "0"),
+    parcel_id = str_c(block_clean, lot_clean),
+    
+    permit_number = as.character(Permit.Number),
+    permit_type = as.character(Permit.Type),
+    permit_type_definition = Permit.Type.Definition,
+    
+    permit_creation_date = ymd_hms(Permit.Creation.Date, quiet = TRUE),
+    filed_date = ymd_hms(Filed.Date, quiet = TRUE),
+    issued_date = ymd_hms(Issued.Date, quiet = TRUE),
+    completed_date = ymd_hms(Completed.Date, quiet = TRUE),
+    
+    current_status = Current.Status,
+    description = Description,
+    
+    block = as.character(Block),
+    lot = as.character(Lot),
+    
+    street_number = as.character(Street.Number),
+    street_name = Street.Name,
+    street_suffix = Street.Suffix,
+    
+    zipcode = as.character(Zipcode),
+    supervisor_district = as.character(supervisor_district),
+    neighborhood = neighborhoods_analysis_boundaries,
+    
+    existing_use = Existing.Use,
+    proposed_use = Proposed.Use,
+    existing_units = as.numeric(Existing.Units),
+    proposed_units = as.numeric(Proposed.Units),
+    
+    estimated_cost = as.numeric(Estimated.Cost),
+    revised_cost = as.numeric(Revised.Cost),
+    
+    record_id = as.character(Record.ID),
+    
+    location = Location,
+    longitude = as.numeric(str_extract(Location, "-\\d+\\.\\d+")),
+    latitude = as.numeric(str_extract(Location, "\\d+\\.\\d+\\)") %>% str_remove("\\)"))
+  ) %>%
+  select(
+    data_source,
+    permit_number,
+    permit_type,
+    permit_type_definition,
+    permit_creation_date,
+    filed_date,
+    issued_date,
+    completed_date,
+    current_status,
+    description,
+    block,
+    lot,
+    block_clean,
+    lot_clean,
+    parcel_id,
+    street_number,
+    street_name,
+    street_suffix,
+    zipcode,
+    supervisor_district,
+    neighborhood,
+    existing_use,
+    proposed_use,
+    existing_units,
+    proposed_units,
+    estimated_cost,
+    revised_cost,
+    record_id,
+    location,
+    longitude,
+    latitude
+  )
+
+
+```
+
+
+```{r combine_permits}
+
+# combine data sets 
+building_permits_all <- bind_rows(
+  before_2013_clean,
+  after_2013_clean
+)
+
+```
+
+
+# Identifying AC Updgrades 
+
 On regex: regex (regular expression) is a function that looks at character strings and filters them out based on how exact you want the match to be. 
-```{r}
-#list of all potential A/C related terms, case insensitive 
-ac_terms <- "(?i)\\b(air conditioning|A/C|HVAC|heat pump|ventilation|fan|duct|insulation|window|roof|weatherization)\\b"
 
-#filtering based on ac terms, but extra terms can be added 
-before_2013 <- before_2013 %>% 
-  filter(str_detect(Description, regex(ac_terms, ignore_case = TRUE))) 
+```{r cooling} 
 
-after_2013 <- after_2013 %>% 
-  filter(str_detect(Description, regex(ac_terms, ignore_case = TRUE))) 
-#hvac is already included in "air conditioning descp" 
-#ac is a semi-dead end 
+# List of air cooling / HVAC-related terms
+cooling_air_terms <- "(?i)\\b(air conditioning|A/C|AC|HVAC|heat pump|mini split|ductless|cooling|condenser|compressor|mechanical ventilation)\\b"
 
-#checking if there are duplicate observations  
-#duplicates <- after_2013[after_2013$Location %in% after_2013$Location[duplicated(after_2013$Location)], ] 
-
-#merging all A/C data
-ac <- merge(before_2013, after_2013, all = TRUE) 
-
-ac <- ac %>% 
-  filter(Current.Status == "complete" | Current.Status == "issued") %>% #filters out only complete/finished permits 
+building_permits_all <- building_permits_all %>%
   mutate(
-    Current.Status.Date = mdy_hms(format(as.POSIXct(Current.Status.Date, format="%Y/%m/%d %I:%M:%S %p"), "%m/%d/%Y %I:%M:%S %p")), #formats the dates
-    year = year(Current.Status.Date), #take the year from the dates 
-    year_quartile = ntile(year,4)) #putting a gradient to see how old the acs were installed/renovated, easy to combine with temperature data and SVI data
+    cooling_air_update = if_else(
+      str_detect(description, cooling_air_terms),
+      1,
+      0
+    )
+  )
 
-ac$Zipcode <- as.character(ac$Zipcode) 
+# look at how many cooling updates
+building_permits_all %>%
+  count(cooling_air_update)
 
-#only look at issued/complete 
-#there are expired OR cancelled ones as well 
+# view some examples 
+
+building_permits_all %>%
+  filter(cooling_air_update == 1) %>%
+  select(
+    data_source,
+    permit_number,
+    filed_date,
+    description,
+    cooling_air_update,
+    zipcode,
+    parcel_id
+  ) %>%
+  head(25)
+
 ```
 
-#Looking at Crowdedness/Building Type via Building Audits
-```{r}
-#main types of buildings considered in this data set
-unique(building_audits$Property.Type...Self.Selected)
-# "Commercial"                 "Multifamily"                "Mixed Residential"          "Commercial - Port Facility" 
 
-#ranks building type on a 1-4, 1 = least, 4 = most or look at tax roll? 
-type_order <- c("Multifamily", "Mixed Residential", "Commercial",  "Commercial - Port Facility")  
+## Tax Roll data -- lots of building definitions 
 
-#applying the ranking to the building_audits data 
-building_audits <- building_audits %>% 
+```{r tax_rolls}
+
+# data cleaning for tax roll data
+
+# Find the most recent tax roll year in the data
+latest_tax_year <- tax_rolls %>%
+  summarise(latest_year = max(Closed.Roll.Year, na.rm = TRUE)) %>%
+  pull(latest_year)
+
+latest_tax_year
+
+# rename variables to simplify 
+# only keep the variables needed for analysis since it is a really large file 
+
+tax_rolls_clean <- tax_rolls %>%
+  filter(Closed.Roll.Year == latest_tax_year) %>%
   mutate(
-    rank = as.numeric(factor(Property.Type...Self.Selected, levels = type_order))
-  ) 
+    parcel_id = as.character(Parcel.Number),
+    
+    tax_roll_year = Closed.Roll.Year,
+    year_built = Year.Property.Built,
+    property_use = Use.Definition,
+    property_class = Property.Class.Code.Definition,
+    number_of_units = parse_number(Number.of.Units),
+    number_of_stories = Number.of.Stories,
+    zoning_code = Zoning.Code,
+    tax_roll_neighborhood = Analysis.Neighborhood,
+    tax_roll_supervisor_district = as.character(Supervisor.District),
+    parcel_location = the_geom
+  ) %>%
+  select(
+    parcel_id,
+    tax_roll_year,
+    year_built,
+    property_use,
+    property_class,
+    number_of_units,
+    number_of_stories,
+    zoning_code,
+    tax_roll_neighborhood,
+    tax_roll_supervisor_district,
+    parcel_location
+  ) %>%
+  distinct(parcel_id, .keep_all = TRUE)
+
+
+```
+ 
+ 
+```{r merge_tax}
+
+# merge the permit with tax data 
+building_permits_tax <- building_permits_all %>%
+  mutate(
+    parcel_id = as.character(parcel_id)
+  ) %>%
+  left_join(tax_rolls_clean, by = "parcel_id")
 ```
 
-#Tax Roll data -- lots of building definitions 
-```{r}
-#multiple types of building 
-unique(tax_rolls$Use.Definition)
-#"Commercial Misc"           "Miscellaneous/Mixed-Use"   "Commercial Retail"         "Commercial Hotel"          "Commercial Office"        
-# "Multi-Family Residential"  "Single Family Residential" "Government"                "Industrial"                "" 
+
+
+## Building Type via Building Audits
+
+Can use variable to examine how crowded a building may be. 
+
+
+```{r audit_data}
+
+# Clean building audit data
+building_audits_clean <- building_audits %>%
+  mutate(
+    parcel_id = Parcel.Number,
+    
+    # Remove anything after a dash, such as "-B"
+    parcel_id = str_remove(parcel_id, "-.*"),
+    
+    # Remove the slash between block and lot
+    parcel_id = str_remove(parcel_id, "/"),
+    
+    # Rename useful audit variables
+    audit_building_type = Property.Type...Self.Selected,
+    audit_building_name = Building.Name,
+    audit_building_address = Building.Address,
+    audit_zipcode = as.character(Postal.Code),
+    audit_floor_area = parse_number(Floor.Area),
+    audit_year_built = Year.Built,
+    audit_status = Energy.Audit.Status,
+    audit_longitude = longitude,
+    audit_latitude = latitude,
+    audit_neighborhood = analysis_neighborhood,
+    audit_supervisor_district = as.character(supervisor_district)
+  ) %>%
+  select(
+    parcel_id,
+    audit_building_type,
+    audit_building_name,
+    audit_building_address,
+    audit_zipcode,
+    audit_floor_area,
+    audit_year_built,
+    audit_status,
+    audit_longitude,
+    audit_latitude,
+    audit_neighborhood,
+    audit_supervisor_district
+  ) %>%
+  distinct(parcel_id, .keep_all = TRUE)
+
 ```
+
+ 
+
+```{r combine_all}
+# Combine permit + tax roll data with building audit data
+final_building_data <- building_permits_tax %>%
+  left_join(
+    building_audits_clean,
+    by = "parcel_id"
+  )
+```
+
+##  Census Tracts
+
+This section uses parcel coordinates from the tax roll data to assign each parcel to a census tract. We first match one row per parcel to a census tract, then join the tract information back to the full permit dataset.
+
+Now we will add geographic information to the final building dataset!
+
+We already have ZIP codes in the permit data. Some records also have ZIP codes from the building audit data. We will make one final ZIP code column using the permit ZIP code first. If that is missing, we will use the audit ZIP code.
+
+For census tracts, we need latitude and longitude. Many older permit records do not have coordinates, so we will use the parcel location from the tax roll data instead. This gives us one location for each parcel.
+
+```{r spatial_features}
+
+# use tigris to get shapefile for san francisco 
+
+options(tigris_use_cache = TRUE)
+
+sf_tracts <- tracts(
+  state = "CA",
+  county = "San Francisco",
+  year = 2020,
+  cb = TRUE
+)
+
+# Check the result
+sf_tracts %>%
+  select(GEOID, NAME, geometry) %>%
+  head()
+
+```
+
+
+```{r align_spatial}
+
+# Add census tract information to the full final building dataset
+
+final_building_data <- final_building_data %>%
+  
+  # Get longitude and latitude from parcel_location
+  mutate(
+    parcel_longitude = as.numeric(str_extract(parcel_location, "-\\d+\\.\\d+")),
+    parcel_latitude = as.numeric(str_extract(parcel_location, "\\d+\\.\\d+\\)") %>%
+                                   str_remove("\\)"))
+  ) %>%
+  
+  # Keep one row per parcel for the spatial join
+  select(
+    parcel_id,
+    parcel_longitude,
+    parcel_latitude
+  ) %>%
+  filter(
+    !is.na(parcel_longitude),
+    !is.na(parcel_latitude)
+  ) %>%
+  distinct(parcel_id, .keep_all = TRUE) %>%
+  
+  # Convert parcel locations to spatial points
+  st_as_sf(
+    coords = c("parcel_longitude", "parcel_latitude"),
+    crs = 4326,
+    remove = FALSE
+  ) %>%
+  
+  # Match each parcel point to a census tract
+  st_join(
+    st_transform(sf_tracts, 4326),
+    join = st_intersects
+  ) %>%
+  
+  # Keep only the tract information needed for the full dataset
+  st_drop_geometry() %>%
+  select(
+    parcel_id,
+    census_tract_geoid = GEOID,
+    census_tract_name = NAME
+  ) %>%
+  
+  # Join tract information back to the full permit/building dataset
+  right_join(
+    final_building_data,
+    by = "parcel_id"
+  )
+
+# About 89% of permit records were matched to census tracts.
+# Census tract assignment uses parcel locations from the tax roll data.
+# Records without parcel locations could not be assigned a census tract.
+```
+
+
+ 
+
+
+```{r saving_datasets}
+
+# Save cleaned intermediate datasets
+write_csv(building_permits_all, "Data/building_permits_all.csv")
+write_csv(tax_rolls_clean, "Data/tax_rolls_clean.csv")
+write_csv(building_audits_clean, "Data/building_audits_clean.csv")
+
+# Save merged datasets
+write_csv(final_building_data, "Data/final_building_data.csv")
+
+```
+
+#### Questions for Team
+
+Decisions to make: What is "new" housing? 
+What year is the cut off?
+
+```{r exploratory}
+# Create analysis variables
+final_building_data <- final_building_data %>%
+  mutate(
+    filed_year = year(filed_date),
+    building_age = 2026 - year_built,
+    
+    newer_housing = if_else(
+      year_built >= 2000, # what year are we considering new?
+      1,
+      0,
+      missing = NA_real_
+    )
+  )
+
+# Create one row per parcel
+
+parcel_analysis_data <- final_building_data %>%
+  group_by(parcel_id) %>%
+  summarise(
+    census_tract_geoid = first(census_tract_geoid),
+    census_tract_name = first(census_tract_name),
+    zipcode = first(zipcode),
+    neighborhood = first(neighborhood),
+    supervisor_district = first(supervisor_district),
+    
+    year_built = first(year_built),
+    building_age = first(building_age),
+    newer_housing = first(newer_housing),
+    
+    property_use = first(property_use),
+    property_class = first(property_class),
+    number_of_units = first(number_of_units),
+    number_of_stories = first(number_of_stories),
+    zoning_code = first(zoning_code),
+    
+    audit_building_type = first(audit_building_type),
+    audit_floor_area = first(audit_floor_area),
+    audit_status = first(audit_status),
+    
+    parcel_location = first(parcel_location),
+    
+    total_permits = n(),
+    cooling_air_updates = sum(cooling_air_update, na.rm = TRUE),
+    
+    any_cooling_air_update = if_else(
+      cooling_air_updates > 0,
+      1,
+      0
+    ),
+    
+    .groups = "drop"
+  )
+
+# Overall cooling-air update summary
+
+parcel_analysis_data %>%
+  summarise(
+    total_parcels = n(),
+    parcels_with_cooling_air_update = sum(any_cooling_air_update, na.rm = TRUE),
+    percent_with_cooling_air_update = round(
+      parcels_with_cooling_air_update / total_parcels * 100,
+      2
+    )
+  )
+
+# Cooling-air updates by neighborhood
+cooling_by_neighborhood <- parcel_analysis_data %>%
+  group_by(neighborhood) %>%
+  summarise(
+    total_parcels = n(),
+    parcels_with_cooling_air_update = sum(any_cooling_air_update, na.rm = TRUE),
+    percent_with_cooling_air_update = round(
+      parcels_with_cooling_air_update / total_parcels * 100,
+      2
+    ),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(percent_with_cooling_air_update))
+
+cooling_by_neighborhood
+
+
+```
+
+#### Figure: Cooling by Neighborhood
+```{r neighborhood_cooling}
+ggplot(cooling_by_neighborhood, 
+       aes(x = reorder(neighborhood, percent_with_cooling_air_update),
+           y = percent_with_cooling_air_update)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Cooling-Air Updates by Neighborhood",
+    x = "Neighborhood",
+    y = "Percent of parcels with cooling-air update"
+  )
+```
+
+
+```{r}
+
+# Cooling-air updates by ZIP code
+cooling_by_zipcode <- parcel_analysis_data %>%
+  group_by(zipcode) %>%
+  summarise(
+    total_parcels = n(),
+    parcels_with_cooling_air_update = sum(any_cooling_air_update, na.rm = TRUE),
+    percent_with_cooling_air_update = round(
+      parcels_with_cooling_air_update / total_parcels * 100,
+      2
+    ),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(percent_with_cooling_air_update))
+
+cooling_by_zipcode
+
+# Cooling-air updates by census tract
+cooling_by_census_tract <- parcel_analysis_data %>%
+  group_by(census_tract_geoid, census_tract_name) %>%
+  summarise(
+    total_parcels = n(),
+    parcels_with_cooling_air_update = sum(any_cooling_air_update, na.rm = TRUE),
+    percent_with_cooling_air_update = round(
+      parcels_with_cooling_air_update / total_parcels * 100,
+      2
+    ),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(percent_with_cooling_air_update))
+
+cooling_by_census_tract
+
+# Older housing by neighborhood
+housing_age_by_neighborhood <- parcel_analysis_data %>%
+  group_by(neighborhood) %>%
+  summarise(
+    total_parcels = n(),
+    median_year_built = median(year_built, na.rm = TRUE),
+    median_building_age = median(building_age, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(median_building_age))
+
+housing_age_by_neighborhood
+
+# Neighborhoods with older housing and fewer cooling updates
+cooling_age_by_neighborhood <- parcel_analysis_data %>%
+  group_by(neighborhood) %>%
+  summarise(
+    total_parcels = n(),
+    median_year_built = median(year_built, na.rm = TRUE),
+    median_building_age = median(building_age, na.rm = TRUE),
+    parcels_with_cooling_air_update = sum(any_cooling_air_update, na.rm = TRUE),
+    percent_with_cooling_air_update = round(
+      parcels_with_cooling_air_update / total_parcels * 100,
+      2
+    ),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(median_building_age), percent_with_cooling_air_update)
+
+cooling_age_by_neighborhood
+
+# Newer housing by neighborhood
+newer_housing_by_neighborhood <- parcel_analysis_data %>%
+  group_by(neighborhood) %>%
+  summarise(
+    total_parcels = n(),
+    newer_housing_parcels = sum(newer_housing, na.rm = TRUE),
+    percent_newer_housing = round(
+      newer_housing_parcels / total_parcels * 100,
+      2
+    ),
+    median_year_built = median(year_built, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(percent_newer_housing))
+
+newer_housing_by_neighborhood
+
+# Cooling-air updates by property use
+cooling_by_property_use <- parcel_analysis_data %>%
+  group_by(property_use) %>%
+  summarise(
+    total_parcels = n(),
+    parcels_with_cooling_air_update = sum(any_cooling_air_update, na.rm = TRUE),
+    percent_with_cooling_air_update = round(
+      parcels_with_cooling_air_update / total_parcels * 100,
+      2
+    ),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(percent_with_cooling_air_update))
+
+cooling_by_property_use
+
+# Cooling-air updates by audit building type
+# This only uses parcels that matched to the building audit dataset.
+
+cooling_by_audit_building_type <- parcel_analysis_data %>%
+  filter(!is.na(audit_building_type)) %>%
+  group_by(audit_building_type) %>%
+  summarise(
+    total_parcels = n(),
+    parcels_with_cooling_air_update = sum(any_cooling_air_update, na.rm = TRUE),
+    percent_with_cooling_air_update = round(
+      parcels_with_cooling_air_update / total_parcels * 100,
+      2
+    ),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(percent_with_cooling_air_update))
+
+cooling_by_audit_building_type
+
+
+
+```
+
+
+
+```{r}
+
+# save data 
+
+write_csv(parcel_analysis_data, "Data/parcel_analysis_data.csv")
+write_csv(cooling_by_neighborhood, "Data/cooling_by_neighborhood.csv")
+write_csv(cooling_by_zipcode, "Data/cooling_by_zipcode.csv")
+write_csv(cooling_by_census_tract, "Data/cooling_by_census_tract.csv")
+write_csv(housing_age_by_neighborhood, "Data/housing_age_by_neighborhood.csv")
+write_csv(cooling_age_by_neighborhood, "Data/cooling_age_by_neighborhood.csv")
+write_csv(newer_housing_by_neighborhood, "Data/newer_housing_by_neighborhood.csv")
+write_csv(cooling_by_property_use, "Data/cooling_by_property_use.csv")
+write_csv(cooling_by_audit_building_type, "Data/cooling_by_audit_building_type.csv")
+```
+
+
+# Exploratory Analysis
+
+
+#### Summary Table by Parcel 
+
+```{r table1}
+
+# parcels are in the dataset
+# parcels have cooling-air updates
+# median year built, and median building age.
+
+summary_table <- parcel_analysis_data %>%
+  summarise(
+    total_parcels = n(),
+    parcels_with_cooling_air_update = sum(any_cooling_air_update, na.rm = TRUE),
+    percent_with_cooling_air_update = round(
+      parcels_with_cooling_air_update / total_parcels * 100,
+      2
+    ),
+    median_year_built = median(year_built, na.rm = TRUE),
+    median_building_age = median(building_age, na.rm = TRUE)
+  )
+
+summary_table
+
+```
+
+## Cooling improvements location
+
+Where are cooling-related improvements occurring?
+
+```{r cooling_neighborhood_summary}
+
+# cooling-air updates by neighborhood
+
+cooling_by_neighborhood <- parcel_analysis_data %>%
+  group_by(neighborhood) %>%
+  summarise(
+    total_parcels = n(),
+    parcels_with_cooling_air_update = sum(any_cooling_air_update, na.rm = TRUE),
+    percent_with_cooling_air_update = round(
+      parcels_with_cooling_air_update / total_parcels * 100,
+      2
+    ),
+    median_year_built = median(year_built, na.rm = TRUE),
+    median_building_age = median(building_age, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(percent_with_cooling_air_update))
+
+cooling_by_neighborhood
+
+
+#  show only the top neighborhoods
+
+cooling_by_neighborhood %>%
+  slice_max(percent_with_cooling_air_update, n = 10)
+
+
+```
+
+Maybe need to remove GGP since people don't like there? 
+
+```{r fig_neirborhoods}
+
+# top neighborhoods for cooling-air updates
+cooling_by_neighborhood %>%
+  slice_max(percent_with_cooling_air_update, n = 15) %>%
+  ggplot(aes(
+    x = reorder(neighborhood, percent_with_cooling_air_update),
+    y = percent_with_cooling_air_update
+  )) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Top Neighborhoods for Cooling-Air Updates",
+    x = "Neighborhood",
+    y = "Percent of parcels with cooling-air update"
+  )
+```
+
+Are older buildings less likely to have cooling-related updates?
+
+```{r age_summary}
+
+# building age vs. cooling-air update
+
+parcel_analysis_data %>%
+  filter(!is.na(building_age)) %>%
+  mutate(
+    cooling_air_update_label = if_else(
+      any_cooling_air_update == 1,
+      "Cooling-air update",
+      "No cooling-air update"
+    )
+  ) %>%
+  ggplot(aes(x = cooling_air_update_label, y = building_age)) +
+  geom_boxplot() +
+  labs(
+    title = "Building Age by Cooling-Air Update Status",
+    x = "",
+    y = "Building age"
+  )
+```
+
+
+ 
+
+
+### Building age association
+
+Is building age associated with cooling-air updates?
+
+Building age was significantly associated with cooling-air updates. The negative coefficient means that older buildings were slightly less likely to have a cooling-air update. This association was statistically significant, p < 0.001.
+
+The effect size is very small, so building age alone probably does not explain much of the difference in cooling-air updates. Other factors, such as neighborhood, building type, property use, or historical disinvestment, may also be important.
+
+```{r map_censustracts}
+
+# using a simple linear model to estimate cooling update
+# predictor is building age
+# outcome is any cooling air update 
+
+cooling_age_model <- glm(
+  any_cooling_air_update ~ building_age,
+  data = parcel_analysis_data,
+  family = binomial
+)
+
+summary(cooling_age_model)
+
+```
+
+
+## Redlining Data
+
+This section joins each parcel to a historical HOLC redlining grade using a spatial join.  Not all parcels will match because the redlining map does not cover every parcel in San Francisco.
+
+```{r load_redlining, include = FALSE}
+
+# save the file path in one object, to make it easier to edit later
+
+redlining_file <- "~/Library/Mobile Documents/com~apple~CloudDocs/Documents/SFSU Faculty/PINC/PINC 2026/PSP-2026/Data/mappinginequality.json"
+
+# read the spatial data 
+redlining <- read_sf(redlining_file)
+
+# check what kind of object this is
+class(redlining)
+
+# check the coordinate reference system
+st_crs(redlining)
+
+# check the geometry type
+st_geometry_type(redlining)
+
+# look at the first few rows of the data
+head(redlining)
+
+```
+
+```{r check_redlining_data, include = FALSE}
+ # select only San Francisco 
+sf_redlining <- redlining %>% filter (city == "San Francisco") %>% 
+  st_transform(4326)
+
+# Note: Mapping requires longitude/latitude coordinates
+# Our data are already WGS 84, but showing the transform step so you are aware
+
+
+# view first rows 
+head(sf_redlining)
+
+# check the HOLC grades 
+table(sf_redlining$grade, useNA = "ifany")
+
+# remove NA
+sf_redlining <- sf_redlining %>%
+  filter(!is.na(grade))
+
+# check the HOLC grades after filtering
+table(sf_redlining$grade, useNA = "ifany")
+
+```
+
+
+```{r}
+# Join parcel data to historical redlining grades
+
+#  Add longitude and latitude from parcel_location
+parcel_analysis_data <- parcel_analysis_data %>%
+  mutate(
+    parcel_longitude = as.numeric(str_extract(parcel_location, "-\\d+\\.\\d+")),
+    parcel_latitude = as.numeric(
+      str_extract(parcel_location, "\\d+\\.\\d+\\)") %>%
+        str_remove("\\)")
+    )
+  )
+
+#  Keep only parcels with coordinates for the spatial join
+parcel_points_sf <- parcel_analysis_data %>%
+  filter(
+    !is.na(parcel_longitude),
+    !is.na(parcel_latitude)
+  ) %>%
+  st_as_sf(
+    coords = c("parcel_longitude", "parcel_latitude"),
+    crs = 4326,
+    remove = FALSE
+  )
+
+#  Make sure redlining data uses the same coordinate system
+sf_redlining_4326 <- sf_redlining %>%
+  st_transform(4326)
+
+# Spatially join parcels to redlining polygons
+sf_use_s2(FALSE)
+
+# Clean redlining geometry
+sf_redlining_4326_clean <- sf_redlining_4326 %>%
+  st_make_valid()
+
+# Join parcel points to redlining polygons
+parcel_redlining_join <- parcel_points_sf %>%
+  st_join(
+    sf_redlining_4326_clean,
+    join = st_intersects
+  ) %>%
+  st_drop_geometry() %>%
+  select(
+    parcel_id,
+    redlining_grade = grade,
+    redlining_category = category,
+    redlining_area_id = area_id
+  ) %>%
+  distinct(parcel_id, .keep_all = TRUE)
+
+# Turn s2 back on after the join
+sf_use_s2(TRUE)
+
+# Join redlining grades back to all parcels
+parcel_analysis_redlining <- parcel_analysis_data %>%
+  left_join(
+    parcel_redlining_join,
+    by = "parcel_id"
+  )
+
+```
+
+Cooling-air updates by redlining grade:
+
+```{r cooling_redlining}
+
+# cooling updates by redlining grade 
+
+cooling_by_redlining <- parcel_analysis_redlining %>%
+  filter(!is.na(redlining_grade)) %>%
+  group_by(redlining_grade, redlining_category) %>%
+  summarise(
+    total_parcels = n(),
+    parcels_with_cooling_air_update = sum(any_cooling_air_update, na.rm = TRUE),
+    percent_with_cooling_air_update = round(
+      parcels_with_cooling_air_update / total_parcels * 100,
+      2
+    ),
+    median_year_built = median(year_built, na.rm = TRUE),
+    median_building_age = median(building_age, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(redlining_grade)
+
+cooling_by_redlining
+
+```
+#### Mapping cooling-air updates by census tract
+```{r}
+# Summarize cooling-air updates by census tract
+cooling_by_tract <- parcel_analysis_redlining %>%
+  filter(!is.na(census_tract_geoid)) %>%
+  group_by(census_tract_geoid) %>%
+  summarise(
+    total_parcels = n(),
+    parcels_with_cooling_air_update = sum(any_cooling_air_update, na.rm = TRUE),
+    percent_with_cooling_air_update = round(
+      parcels_with_cooling_air_update / total_parcels * 100,
+      2
+    ),
+    .groups = "drop"
+  )
+
+# Join tract summary to tract shapefile
+cooling_tract_map <- sf_tracts %>%
+  st_transform(4326) %>%
+  left_join(
+    cooling_by_tract,
+    by = c("GEOID" = "census_tract_geoid")
+  )
+
+# Map percent of parcels with cooling-air updates
+ggplot() +
+  geom_sf(
+    data = cooling_tract_map,
+    aes(fill = percent_with_cooling_air_update),
+    color = "white",
+    linewidth = 0.1
+  ) +
+  labs(
+    title = "Cooling-Air Updates by Census Tract",
+    fill = "% of parcels"
+  ) +
+  theme_minimal()
+```
+
+#### Mapping Redlining
+
+```{r}
+ 
+# Make sure redlining data is in longitude/latitude for leaflet
+sf_redlining_leaflet <- sf_redlining %>%
+  st_transform(4326)
+
+# Create HOLC color palette
+holc_palette <- colorFactor(
+  palette = c(
+    "A" = "#76a865",  # Best
+    "B" = "#7cb5bd",  # Still Desirable
+    "C" = "#ffff00",  # Definitely Declining
+    "D" = "#d9838d"   # Hazardous
+  ),
+  domain = sf_redlining_leaflet$grade
+)
+
+# Leaflet map of historical redlining grades
+leaflet(sf_redlining_leaflet) %>%
+  addTiles() %>%
+  setView(
+    lng = -122.4194,
+    lat = 37.7749,
+    zoom = 12
+  ) %>%
+  addPolygons(
+    fillColor = ~holc_palette(grade),
+    fillOpacity = 0.7,
+    color = "white",
+    weight = 1,
+    popup = ~paste0(
+      "<strong>HOLC Grade:</strong> ", grade, "<br>",
+      "<strong>Category:</strong> ", category, "<br>",
+      "<strong>Area ID:</strong> ", area_id
+    )
+  ) %>%
+  addLegend(
+    pal = holc_palette,
+    values = ~grade,
+    title = "HOLC Grade",
+    opacity = 0.7
+  )
+ 
+
+cooling_by_redlining_area <- parcel_analysis_redlining %>%
+  filter(!is.na(redlining_area_id)) %>%
+  group_by(redlining_area_id, redlining_grade, redlining_category) %>%
+  summarise(
+    total_parcels = n(),
+    parcels_with_cooling_air_update = sum(any_cooling_air_update, na.rm = TRUE),
+    percent_with_cooling_air_update = round(
+      parcels_with_cooling_air_update / total_parcels * 100,
+      2
+    ),
+    .groups = "drop"
+  )
+
+redlining_cooling_map <- sf_redlining_leaflet %>%
+  left_join(
+    cooling_by_redlining_area,
+    by = c("area_id" = "redlining_area_id")
+  )
+
+# map percent cooling-air updates by redlining area:
+
+cooling_palette <- colorNumeric(
+  palette = "YlOrRd",
+  domain = redlining_cooling_map$percent_with_cooling_air_update,
+  na.color = "transparent"
+)
+
+
+leaflet(redlining_cooling_map) %>%
+  addTiles() %>%
+  setView(
+    lng = -122.4194,
+    lat = 37.7749,
+    zoom = 12
+  ) %>%
+  addPolygons(
+    fillColor = ~cooling_palette(percent_with_cooling_air_update),
+    fillOpacity = 0.7,
+    color = "white",
+    weight = 1,
+    popup = ~paste0(
+      "<strong>HOLC Grade:</strong> ", grade, "<br>",
+      "<strong>Category:</strong> ", category, "<br>",
+      "<strong>Total parcels:</strong> ", total_parcels, "<br>",
+      "<strong>Parcels with cooling-air update:</strong> ",
+      parcels_with_cooling_air_update, "<br>",
+      "<strong>Percent with cooling-air update:</strong> ",
+      percent_with_cooling_air_update, "%"
+    )
+  ) %>%
+  addLegend(
+    pal = cooling_palette,
+    values = ~percent_with_cooling_air_update,
+    title = "% with cooling-air update",
+    opacity = 0.7
+  )
+```
+
+
 
