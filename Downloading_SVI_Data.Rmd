@@ -1,6 +1,6 @@
 ---
 title: "Downloading SVI Data"
-author: "Mahal Bilaoen"
+author: "Mahal Bilaoen and Nancy Carmona"
 date: "`r Sys.Date()`"
 output: html_document
 ---
@@ -8,24 +8,44 @@ output: html_document
 #Package Loading In most cases, many coders prefer to load in all of their packages at the very beginning chunk. This is so that whenever code is being opened and revisited, code can run smoothly without having to wait for packages to be downloaded or loaded into the workspace. Many r coders use a package called "Pacman", which loads and downloads packages in a single line of code.
 
 ```{r setup, include=FALSE}
+#-----setup options-----
+
+# clear the workspace
+rm(list = ls())
+
+# knitr options, shows the code in the knitted HTML file 
 knitr::opts_chunk$set(echo = TRUE)
 
-#install.packages(pacman)
+```
+
+```{r load_libraries, echo=FALSE, include=FALSE, eval=TRUE}
+#-----load libraries pacman-----
+
+# load pacman, installing if needed
+if (!require("pacman")) {install.packages("pacman")}
+
+# load other packages, installing as needed
 pacman::p_load(tidyverse)
+
 ```
 
-#Reading in SVI Data
-Options to filter out by zipcode or by census tract. 
-```{r}
-svi_census <- read.csv("~/PH 699 Bilaoen/SVI_2022_Census_Tract.csv")
+# Reading in SVI Data
+Options to filter out by zipcode or by census tract. Starting with CA only data. This means the SVI has been developed in relation to other census tracts or zipcodes in CA.
 
-svi_zcta <- read.csv("~/PH 699 Bilaoen/SVI_2022_Zip_Code.csv")
+```{r load_data}
+
+# load census tract level data
+svi_census <- read.csv("Data/SVI_2022_CA.csv")
+
+# load zip code level data
+svi_zcta <- read.csv("Data/California_ZCTA.csv")
+
 ```
 
-#Data Wrangling 
+# Data Wrangling 
 When downloading SVI data, the entire state/region is being downloaded. In order to only have San Francisco data, we need to do some data cleaning. Code for both census tract and zipcode level SVI will be included.
 
-##Census Level filter
+## Census Level filter
 ```{r}
 svi_census <- svi_census %>% 
   filter(COUNTY == "San Francisco County") %>% #filtering out for San Francisco County only 
@@ -35,7 +55,7 @@ svi_census <- svi_census %>%
   filter(site != "6075980401") #removing the Farallones islands 
 ```
 
-##ZCTA (Zipcode Tabulation Area / Zipcode) Level filter
+## ZCTA (Zipcode Tabulation Area / Zipcode) Level filter
 ```{r}
 svi_zcta <-  svi_zcta %>% 
   filter(grepl("^941", FIPS)) %>% #filtering out for zipcodes that start with 941 in the FIPS column 
@@ -77,13 +97,15 @@ svi_zcta <- svi_zcta %>%
   select(FIPS,RPL_THEMES,RPL_THEME1,RPL_THEME2,RPL_THEME3,RPL_THEME4) #only keeping major themes for SVI 
 ```
 
-#Saving Copies of SF SVI Data Only 
+# Saving Copies of SF SVI Data Only 
 Whenever we manipulate data, we save a copy of the data that we know we're going to need in the future so we don't have to run this code every single time. Below is a general format of how you create a new csv file / dataset.
+
 ```{r}
 #census level data 
-write.csv(svi_census, file = "svi_2022_census.csv", row.names = FALSE) 
+write.csv(svi_census, file = "Data/svi_2022_census.csv", row.names = FALSE) 
 
 #zcta level data 
-write.csv(svi_zcta, file = "svi_2022_zcta.csv", row.names = FALSE)
+write.csv(svi_zcta, file = "Data/svi_2022_zcta.csv", row.names = FALSE)
+
 ```
 

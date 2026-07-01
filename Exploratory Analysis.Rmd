@@ -1,0 +1,861 @@
+---
+title: "Heat, Redlining, Cooling Updates, and Greening Analysis"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+#-----setup options-----
+
+# clear the workspace
+rm(list = ls())
+
+# knitr options, shows the code in the knitted HTML file 
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+```{r load_libraries, echo=FALSE, include=FALSE, eval=TRUE}
+#-----load libraries pacman-----
+
+# load pacman, installing if needed
+if (!require("pacman")) {install.packages("pacman")}
+
+# load other packages, installing as needed
+pacman::p_load(tidyverse, broom)
+
+```
+
+
+# Introduction
+
+This analysis uses three cleaned datasets which can be found in the Box Data folders.
+
+1. `tract_year_full.csv`: census tract-year dataset  
+2. `zip_year_full.csv`: ZIP code-year dataset  
+3. `neighborhood_year_full.csv`: neighborhood-year dataset  
+
+The main research aims are:
+
+**Aim 1:** Examine the association between historical redlining and current heat wave exposure from 2012 to 2022.  
+**Aim 2:** Assess whether building permit cooling updates from 2012 to 2022 vary by historical redlining grade.  
+**Aim 3:** Evaluate whether historical redlining is associated with current neighborhood greenness and tree planting.
+
+We also explore neighborhood-level investment using building permits, cooling updates, trees planted, and building age.
+ 
+ 
+```{r load_data}
+# Read the cleaned analysis datasets from the Data folder.
+# These files were created in the previous data cleaning script.
+
+tract_year_full <- read_csv("Data/tract_year_full.csv")
+zip_year_full <- read_csv("Data/zip_year_full.csv")
+neighborhood_year_full <- read_csv("Data/neighborhood_year_full.csv")
+```
+
+```{r check_loaded_data}
+# Check that the files loaded correctly.
+# glimpse() is useful because it shows column names, data types, and example values.
+
+glimpse(tract_year_full)
+glimpse(zip_year_full)
+glimpse(neighborhood_year_full)
+```
+
+Some data wrangling was done to change missing values are changed to 0. For example, if a tract-year has no recorded tree planting, we treat that as 0 trees planted.
+
+```{r prepare_analysis_data}
+# Clean census tract-year dataset for analysis.
+
+tract_year_analysis <- tract_year_full %>%
+  mutate(
+    total_permits = replace_na(total_permits, 0),
+    cooling_air_updates = replace_na(cooling_air_updates, 0),
+    trees_planted = replace_na(trees_planted, 0),
+    heat_days_95 = replace_na(heat_days_95, 0),
+    heatwave_days_2day = replace_na(heatwave_days_2day, 0),
+    heatwave_days_3day = replace_na(heatwave_days_3day, 0),
+    heatwave_events_2day = replace_na(heatwave_events_2day, 0),
+    heatwave_events_3day = replace_na(heatwave_events_3day, 0),
+    any_cooling_air_update = if_else(cooling_air_updates > 0, 1, 0)
+  )
+
+# Clean ZIP code-year dataset for analysis.
+
+zip_year_analysis <- zip_year_full %>%
+  mutate(
+    total_permits = replace_na(total_permits, 0),
+    cooling_air_updates = replace_na(cooling_air_updates, 0),
+    trees_planted = replace_na(trees_planted, 0),
+    heat_days_95 = replace_na(heat_days_95, 0),
+    heatwave_days_2day = replace_na(heatwave_days_2day, 0),
+    heatwave_days_3day = replace_na(heatwave_days_3day, 0),
+    heatwave_events_2day = replace_na(heatwave_events_2day, 0),
+    heatwave_events_3day = replace_na(heatwave_events_3day, 0),
+    any_cooling_air_update = if_else(cooling_air_updates > 0, 1, 0)
+  )
+
+# Clean neighborhood-year dataset for analysis.
+
+neighborhood_year_analysis <- neighborhood_year_full %>%
+  mutate(
+    total_permits = replace_na(total_permits, 0),
+    cooling_air_updates = replace_na(cooling_air_updates, 0),
+    trees_planted = replace_na(trees_planted, 0),
+    heat_days_95 = replace_na(heat_days_95, 0),
+    heatwave_days_2day = replace_na(heatwave_days_2day, 0),
+    heatwave_days_3day = replace_na(heatwave_days_3day, 0),
+    heatwave_events_2day = replace_na(heatwave_events_2day, 0),
+    heatwave_events_3day = replace_na(heatwave_events_3day, 0),
+    any_cooling_air_update = if_else(cooling_air_updates > 0, 1, 0)
+  )
+```
+
+# Exploratory Data Checks
+
+These checks help us understand the size and structure of the datasets before doing analysis.
+
+```{r check_dataset_size}
+# Check number of rows, geographies, and years.
+
+tract_year_analysis %>%
+  summarise(
+    dataset = "Census tract-year",
+    rows = n(),
+    geographies = n_distinct(census_tract_geoid),
+    min_year = min(year, na.rm = TRUE),
+    max_year = max(year, na.rm = TRUE)
+  )
+
+zip_year_analysis %>%
+  summarise(
+    dataset = "ZIP code-year",
+    rows = n(),
+    geographies = n_distinct(zipcode),
+    min_year = min(year, na.rm = TRUE),
+    max_year = max(year, na.rm = TRUE)
+  )
+
+neighborhood_year_analysis %>%
+  summarise(
+    dataset = "Neighborhood-year",
+    rows = n(),
+    geographies = n_distinct(neighborhood),
+    min_year = min(year, na.rm = TRUE),
+    max_year = max(year, na.rm = TRUE)
+  )
+```
+
+```{r check_missingness}
+# Check missingness in key variables.
+# This helps identify variables that may need caution in analysis.
+
+tract_year_analysis %>%
+  summarise(
+    rows = n(),
+    missing_svi = sum(is.na(svi_overall)),
+    missing_redlining_grade = sum(is.na(dominant_redlining_grade)),
+    missing_building_age = sum(is.na(median_building_age)),
+    missing_year_built = sum(is.na(median_year_built))
+  )
+```
+
+# Descriptive Analysis
+
+## Overall Summary
+
+```{r overall_summary}
+# Overall summary across all census tract-years.
+
+overall_summary <- tract_year_analysis %>%
+  summarise(
+    tract_years = n(),
+    census_tracts = n_distinct(census_tract_geoid),
+    total_permits = sum(total_permits, na.rm = TRUE),
+    total_cooling_air_updates = sum(cooling_air_updates, na.rm = TRUE),
+    percent_cooling_air = round(total_cooling_air_updates / total_permits * 100, 2),
+    average_heat_days_95 = mean(heat_days_95, na.rm = TRUE),
+    average_heatwave_events_3day = mean(heatwave_events_3day, na.rm = TRUE),
+    total_trees_planted = sum(trees_planted, na.rm = TRUE),
+    average_svi = mean(svi_overall, na.rm = TRUE),
+    median_building_age = median(median_building_age, na.rm = TRUE)
+  )
+
+overall_summary
+```
+
+## Yearly Trends
+
+```{r yearly_summary}
+# Summarize key variables by year.
+
+yearly_summary <- tract_year_analysis %>%
+  group_by(year) %>%
+  summarise(
+    total_permits = sum(total_permits, na.rm = TRUE),
+    cooling_air_updates = sum(cooling_air_updates, na.rm = TRUE),
+    percent_cooling_air = round(cooling_air_updates / total_permits * 100, 2),
+    average_heat_days_95 = mean(heat_days_95, na.rm = TRUE),
+    average_heatwave_events_3day = mean(heatwave_events_3day, na.rm = TRUE),
+    total_trees_planted = sum(trees_planted, na.rm = TRUE),
+    average_svi = mean(svi_overall, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+yearly_summary
+```
+
+```{r plot_cooling_over_time}
+# Plot cooling-air updates over time.
+
+ggplot(yearly_summary, aes(x = year, y = cooling_air_updates)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Cooling-Air Updates Over Time",
+    x = "Year",
+    y = "Number of cooling-air updates"
+  ) +
+  scale_x_continuous(
+  breaks = 2012:2022,
+  minor_breaks = NULL) + 
+  theme_minimal()
+```
+
+```{r plot_heat_over_time}
+# Plot average heat days over time.
+
+ggplot(yearly_summary, aes(x = year, y = average_heat_days_95)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Average Heat Days Over Time",
+    x = "Year",
+    y = "Average heat days above 95th percentile"
+  ) +
+    scale_x_continuous(
+  breaks = 2012:2022,
+  minor_breaks = NULL) + 
+  theme_minimal()
+```
+
+```{r plot_trees_over_time}
+# Plot trees planted over time.
+
+ggplot(yearly_summary, aes(x = year, y = total_trees_planted)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Trees Planted Over Time",
+    x = "Year",
+    y = "Trees planted"
+  ) +
+    scale_x_continuous(
+  breaks = 2012:2022,
+  minor_breaks = NULL) + 
+  theme_minimal()
+```
+
+# Aim 1: Redlining and Heatwave Exposure
+
+This aim asks whether historical redlining grade is associated with heat exposure from 2012 to 2022.
+
+## Descriptive Table
+
+```{r aim1_heat_by_redlining}
+# Compare heat exposure by historical redlining grade.
+
+aim1_heat_by_redlining <- tract_year_analysis %>%
+  filter(!is.na(dominant_redlining_grade)) %>%
+  group_by(dominant_redlining_grade, dominant_redlining_category) %>%
+  summarise(
+    tract_years = n(),
+    census_tracts = n_distinct(census_tract_geoid),
+    average_heat_days_95 = mean(heat_days_95, na.rm = TRUE),
+    median_heat_days_95 = median(heat_days_95, na.rm = TRUE),
+    average_heatwave_events_3day = mean(heatwave_events_3day, na.rm = TRUE),
+    median_heatwave_events_3day = median(heatwave_events_3day, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(dominant_redlining_grade)
+
+aim1_heat_by_redlining
+```
+
+## Figure
+
+```{r aim1_heat_redlining_plot}
+# Bar chart of heat days by redlining grade.
+
+ggplot(
+  aim1_heat_by_redlining,
+  aes(x = dominant_redlining_grade, y = average_heat_days_95)
+) +
+  geom_col() +
+  labs(
+    title = "Average Heat Days by Historical Redlining Grade",
+    x = "Dominant redlining grade",
+    y = "Average heat days above 95th percentile"
+  ) +
+  theme_minimal()
+```
+
+## Inferential Analysis
+
+Census tracts with dominant redlining grades B, C, and D had slightly more heat days than grade A tracts, on average. Compared with grade A tracts, grade B tracts had about 3.7 more heat days, grade C tracts had about 3.5 more heat days, and grade D tracts had about 3.1 more heat days.
+
+However, these differences were not statistically significant at the 0.05 level because all p-values were greater than 0.05 and the confidence intervals included 0. This suggests that there is some evidence of higher heat exposure in historically lower-graded areas, but the association was not strong enough to conclude a statistically significant difference in this model.
+
+```{r aim1_heat_model}
+# Simple linear regression.
+# Outcome: heat_days_95
+# Predictor: dominant_redlining_grade
+
+Aim1_heat_model <- lm(
+  heat_days_95 ~ dominant_redlining_grade,
+  data = tract_year_analysis %>%
+    filter(!is.na(dominant_redlining_grade))
+)
+
+summary(Aim1_heat_model)
+
+tidy(Aim1_heat_model, conf.int = TRUE)
+```
+
+After adjusting for SVI, median building age, and trees planted, historical redlining grade was significantly associated with heat exposure. Compared with grade A tracts, grade B tracts had about 4.8 more heat days, grade C tracts had about 4.8 more heat days, and grade D tracts had about 4.4 more heat days. These differences were statistically significant because the p-values were below 0.05 and the confidence intervals did not include 0.
+
+Trees planted was also significantly associated with heat days. Each additional tree planted was associated with about 0.33 more heat days. This does not mean trees cause heat; it may suggest that more trees were planted in hotter areas or areas targeted for greening investments.
+
+SVI and median building age were not statistically significant in this model. Overall, this adjusted model suggests that historically lower-graded redlining areas experienced higher heat exposure from 2012 to 2022, even after accounting for selected tract characteristics.
+
+```{r aim1_heat_model_adjusted}
+# Adjusted model.
+# This model also includes SVI, building age, and trees planted.
+
+Aim1_heat_model_adjusted <- lm(
+  heat_days_95 ~
+    dominant_redlining_grade +
+    svi_overall +
+    median_building_age +
+    trees_planted,
+  data = tract_year_analysis %>%
+    filter(!is.na(dominant_redlining_grade))
+)
+
+summary(Aim1_heat_model_adjusted)
+
+tidy(Aim1_heat_model_adjusted, conf.int = TRUE)
+```
+
+# Aim 2: Redlining and Cooling-Air Updates
+
+This aim asks whether cooling-related building permit updates vary by historical redlining grade.
+
+## Descriptive Table
+
+Cooling-air updates varied by historical redlining grade. Grade D areas, which were historically classified as “Hazardous,” had the highest percent of permits that were cooling-air updates at 0.76%. Grade A areas had the next highest percentage at 0.58%, followed by grade C areas at 0.38% and grade B areas at 0.29%.
+
+However, the number of census tracts differed across grades. There were only 8 grade A tracts compared with 62 grade D tracts, so raw counts should be interpreted carefully. Grade D areas had the largest number of cooling-air updates overall, with 563 updates, but they also included many more tract-years than grade A areas.
+
+Overall, these descriptive results suggest that cooling-air updates were not evenly distributed across historical redlining grades. Grade D areas had the highest percentage of cooling-related permit activity, but additional analysis is needed to determine whether these differences are statistically significant after accounting for heat exposure, SVI, building age, and total permit activity.
+
+
+```{r aim2_cooling_by_redlining}
+# Compare cooling-air updates by historical redlining grade.
+
+aim2_cooling_by_redlining <- tract_year_analysis %>%
+  filter(!is.na(dominant_redlining_grade)) %>%
+  group_by(dominant_redlining_grade, dominant_redlining_category) %>%
+  summarise(
+    tract_years = n(),
+    census_tracts = n_distinct(census_tract_geoid),
+    total_permits = sum(total_permits, na.rm = TRUE),
+    cooling_air_updates = sum(cooling_air_updates, na.rm = TRUE),
+    percent_cooling_air = round(cooling_air_updates / total_permits * 100, 2),
+    average_cooling_air_updates = mean(cooling_air_updates, na.rm = TRUE),
+    percent_tract_years_with_any_cooling = round(mean(any_cooling_air_update, na.rm = TRUE) * 100, 2),
+    .groups = "drop"
+  ) %>%
+  arrange(dominant_redlining_grade)
+
+aim2_cooling_by_redlining
+```
+
+## Figure
+
+The percentage of permits that were cooling-air updates varied across historical redlining grades. Grade D areas, historically classified as “Hazardous,” had the highest percentage of cooling-air permit updates. Grade A areas had the second highest percentage, while grades B and C had lower percentages.
+
+This suggests that cooling-related permit activity was not evenly distributed across redlining grades.
+
+```{r aim2_cooling_redlining_plot}
+# Bar chart of cooling-air update percent by redlining grade.
+
+ ggplot(
+  aim2_cooling_by_redlining,
+  aes(
+    x = dominant_redlining_grade,
+    y = percent_cooling_air / 100
+  )
+) +
+  geom_col() +
+  scale_y_continuous(labels = scales::percent) +
+  labs(
+    title = "Cooling-Air Permit Updates by Historical Redlining Grade",
+    x = "Dominant redlining grade",
+    y = "Percent of permits that were cooling-air updates"
+  ) +
+  theme_minimal()
+```
+
+## Inferential Analysis
+
+### Do average cooling updates differ by redlining grade?
+
+The ANOVA test showed that the average number of cooling-air updates did not differ significantly by historical redlining grade, F(3, 1822) = 1.36, p = 0.254.
+
+Although the descriptive table showed some differences across grades, especially a higher percentage of cooling-air permit activity in grade D areas, the ANOVA result suggests that these differences were not statistically significant.
+
+```{r aim2_cooling_anova}
+# ANOVA compares the average number of cooling-air updates across redlining grades.
+# This is easier to introduce than a count model.
+
+Aim2_cooling_anova <- aov(
+  cooling_air_updates ~ dominant_redlining_grade,
+  data = tract_year_analysis %>%
+    filter(!is.na(dominant_redlining_grade))
+)
+
+summary(Aim2_cooling_anova)
+```
+
+### Linear regression: percent cooling-air updates
+
+This model uses `percent_cooling_air` as the outcome. This is easier to interpret because it asks whether the percentage of permits that are cooling-related varies by redlining grade, after accounting for heat, SVI, and building age.
+
+After adjusting for heat days, SVI, and median building age, grades B, C, and D had significantly fewer cooling-air updates than grade A. SVI was positively associated with cooling-air updates, while heat days and building age were not significant. This suggests that adjusted differences by redlining grade may differ from the simple descriptive percentages.
+
+```{r aim2_cooling_lm}
+# Linear regression with percent cooling-air updates as the outcome.
+# We filter to rows with at least one permit because percent_cooling_air is based on permits.
+
+Aim2_cooling_lm <- lm(
+  percent_cooling_air ~
+    dominant_redlining_grade +
+    heat_days_95 +
+    svi_overall +
+    median_building_age,
+  data = tract_year_analysis %>%
+    filter(
+      total_permits > 0,
+      !is.na(dominant_redlining_grade),
+      !is.na(percent_cooling_air)
+    )
+)
+
+summary(Aim2_cooling_lm)
+
+tidy(Aim2_cooling_lm, conf.int = TRUE)
+```
+
+### Logistic regression for any cooling-air update
+
+This model asks whether a tract-year had at least one cooling-air update. The outcome is yes/no.  
+
+In the logistic regression model, grades B, C, and D had significantly lower odds of having any cooling-air update compared with grade A. Heat days and SVI were also associated with slightly lower odds of a cooling update, while older median building age was associated with slightly higher odds. Overall, this suggests that after adjustment, non-A redlining grades were less likely to have any cooling-air update in a given tract-year.
+
+```{r aim2_logistic_model}
+Aim2_logistic_model <- glm(
+  any_cooling_air_update ~
+    dominant_redlining_grade +
+    heat_days_95 +
+    svi_overall +
+    median_building_age,
+  data = tract_year_analysis %>%
+    filter(!is.na(dominant_redlining_grade)),
+  family = binomial
+)
+
+summary(Aim2_logistic_model)
+
+# Exponentiated estimates are odds ratios.
+# Values above 1 mean higher odds of having any cooling-air update.
+tidy(Aim2_logistic_model, conf.int = TRUE, exponentiate = TRUE)
+```
+
+# Aim 3: Redlining and Greening / Tree Planting
+
+This aim asks whether historical redlining is associated with greening investment.  
+In this dataset, greening is measured as the number of trees planted. If a true tree canopy coverage variable is added later, it can be analyzed using a similar approach.
+
+## Descriptive Table
+
+Tree planting varied across historical redlining grades. Grade D areas had the largest total number of trees planted, but they also included the most tract-years and census tracts. When looking at the average number of trees planted per tract-year, grade A areas had the highest average at 8.65 trees, while grades B, C, and D were similar, with averages between about 5.2 and 5.5 trees. This suggests that grade A areas had more tree planting per tract-year than the other redlining grades.
+
+
+```{r aim3_trees_by_redlining}
+# Compare trees planted by historical redlining grade.
+
+aim3_trees_by_redlining <- tract_year_analysis %>%
+  filter(!is.na(dominant_redlining_grade)) %>%
+  group_by(dominant_redlining_grade, dominant_redlining_category) %>%
+  summarise(
+    tract_years = n(),
+    census_tracts = n_distinct(census_tract_geoid),
+    total_trees_planted = sum(trees_planted, na.rm = TRUE),
+    average_trees_planted = mean(trees_planted, na.rm = TRUE),
+    median_trees_planted = median(trees_planted, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(dominant_redlining_grade)
+
+aim3_trees_by_redlining
+```
+
+## Figure
+
+Grade A areas had the highest average number of trees planted per tract-year. Grades B, C, and D had lower and similar averages. This descriptive pattern suggests possible differences in tree planting by redlining grade, but an inferential test is needed to determine whether the differences are statistically significant.
+
+
+```{r aim3_trees_redlining_plot}
+# Bar chart of trees planted by redlining grade.
+
+ggplot(
+  aim3_trees_by_redlining,
+  aes(x = dominant_redlining_grade, y = average_trees_planted)
+) +
+  geom_col() +
+  labs(
+    title = "Trees Planted by Historical Redlining Grade",
+    x = "Dominant redlining grade",
+    y = "Average trees planted per tract-year"
+  ) +
+  theme_minimal()
+```
+
+## Inferential Analysis
+
+After adjusting for SVI and median building age, grades B, C, and D had significantly fewer trees planted than grade A. On average, grades B, C, and D had about 3.6 to 3.8 fewer trees planted per tract-year compared with grade A. SVI and median building age were not statistically significant. This suggests that historically lower-graded areas had less tree planting than grade A areas, even after adjustment.
+
+
+```{r aim3_tree_model}
+# Linear regression model for trees planted.
+
+Aim3_tree_model <- lm(
+  trees_planted ~
+    dominant_redlining_grade +
+    svi_overall +
+    median_building_age,
+  data = tract_year_analysis %>%
+    filter(!is.na(dominant_redlining_grade))
+)
+
+summary(Aim3_tree_model)
+
+tidy(Aim3_tree_model, conf.int = TRUE)
+```
+
+You can also compare average trees planted across redlining grades using ANOVA.
+
+Tree planting differed significantly by historical redlining grade. The ANOVA result was statistically significant, F(3, 1822) = 5.48, p < 0.001, suggesting that average trees planted varied across grades.
+
+In the adjusted linear regression, grades B, C, and D all had significantly fewer trees planted than grade A. On average, these grades had about 3.6 to 3.8 fewer trees planted per tract-year compared with grade A, after adjusting for SVI and median building age. SVI and building age were not statistically significant.
+
+
+```{r aim3_tree_anova}
+# ANOVA compares average trees planted across redlining grades.
+
+Aim3_tree_anova <- aov(
+  trees_planted ~ dominant_redlining_grade,
+  data = tract_year_analysis %>%
+    filter(!is.na(dominant_redlining_grade))
+)
+
+summary(Aim3_tree_anova)
+```
+
+You can also examine whether SVI is correlated (pearson correlation in this example) with tree planting.
+
+The correlation between trees planted and SVI was -0.08, which indicates a very weak negative relationship. This means that tracts with higher social vulnerability had slightly fewer trees planted, but the relationship is very small. Overall, there is little evidence of a strong linear association between SVI and tree planting in this descriptive correlation.
+
+
+```{r aim3_tree_svi_correlation}
+# Correlation between SVI and trees planted.
+# use = "complete.obs" means R only uses rows with both variables present.
+
+cor(
+  tract_year_analysis$trees_planted,
+  tract_year_analysis$svi_overall,
+  use = "complete.obs"
+)
+```
+
+# Neighborhood Investment Analysis
+
+Which neighborhoods have had more investment?   
+
+- Total building permit activity  
+- Cooling-air updates  
+- Trees planted  
+- Newer building stock  
+
+## Neighborhood Summary
+
+```{r neighborhood_investment_summary}
+# Summarize investment indicators by neighborhood across all years.
+
+neighborhood_investment_summary <- neighborhood_year_analysis %>%
+  group_by(neighborhood) %>%
+  summarise(
+    years = n_distinct(year),
+    total_permits = sum(total_permits, na.rm = TRUE),
+    total_cooling_air_updates = sum(cooling_air_updates, na.rm = TRUE),
+    percent_cooling_air = round(total_cooling_air_updates / total_permits * 100, 2),
+    total_trees_planted = sum(trees_planted, na.rm = TRUE),
+    average_heat_days_95 = mean(heat_days_95, na.rm = TRUE),
+    average_heatwave_events_3day = mean(heatwave_events_3day, na.rm = TRUE),
+    average_svi = mean(mean_svi_overall, na.rm = TRUE),
+    median_year_built = median(median_year_built, na.rm = TRUE),
+    median_building_age = median(median_building_age, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(total_permits))
+
+neighborhood_investment_summary
+```
+
+## Neighborhoods with Most Cooling-Air Updates
+
+Cooling-air updates were highly concentrated in a small number of neighborhoods. Financial District/South Beach had far more cooling-air updates than any other neighborhood from 2012 to 2022. South of Market, Bayview Hunters Point, and the Mission also had relatively high numbers of updates. This suggests that cooling-related permit activity was not evenly distributed across San Francisco neighborhoods.
+
+
+```{r plot_neighborhood_cooling}
+neighborhood_investment_summary %>%
+  slice_max(total_cooling_air_updates, n = 15) %>%
+  ggplot(aes(x = reorder(neighborhood, total_cooling_air_updates), y = total_cooling_air_updates)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Neighborhoods with the Most Cooling-Air Updates",
+    x = "Neighborhood",
+    y = "Cooling-air updates, 2012-2022"
+  ) +
+  theme_minimal()
+```
+
+## Neighborhoods with Most Trees Planted
+
+Tree planting was concentrated in several neighborhoods from 2012 to 2022. The Mission had the highest number of trees planted, followed by Bayview Hunters Point, Sunset/Parkside, West of Twin Peaks, and Outer Richmond. This suggests that greening investments were not evenly distributed across neighborhoods.
+
+```{r plot_neighborhood_trees}
+neighborhood_investment_summary %>%
+  slice_max(total_trees_planted, n = 15) %>%
+  ggplot(aes(x = reorder(neighborhood, total_trees_planted), y = total_trees_planted)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Neighborhoods with the Most Trees Planted",
+    x = "Neighborhood",
+    y = "Trees planted, 2012-2022"
+  ) +
+  theme_minimal()
+```
+
+## Neighborhoods with Most Building Permit Activity
+
+Building permit activity was highly concentrated in a small number of neighborhoods from 2012 to 2022. Financial District/South Beach had the most permit activity by far, followed by the Mission, Sunset/Parkside, West of Twin Peaks, and Pacific Heights. This suggests that building-related investment and construction activity were not evenly distributed across neighborhoods.
+
+
+```{r plot_neighborhood_permits}
+neighborhood_investment_summary %>%
+  slice_max(total_permits, n = 15) %>%
+  ggplot(aes(x = reorder(neighborhood, total_permits), y = total_permits)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Neighborhoods with the Most Building Permit Activity",
+    x = "Neighborhood",
+    y = "Total permits, 2012-2022"
+  ) +
+  theme_minimal()
+```
+
+# Building Age Cutoff
+
+You can cange the value below to test a different definition! 
+
+```{r choose_new_building_cutoff}
+# Students can change this cutoff.
+
+new_building_cutoff <- 2000
+```
+
+```{r create_new_building_groups}
+# Create a building age group using the selected cutoff.
+
+tract_year_analysis <- tract_year_analysis %>%
+  mutate(
+    newer_building_group = if_else(
+      median_year_built >= new_building_cutoff,
+      "Newer building stock",
+      "Older building stock",
+      missing = NA_character_
+    )
+  )
+
+neighborhood_year_analysis <- neighborhood_year_analysis %>%
+  mutate(
+    newer_building_group = if_else(
+      median_year_built >= new_building_cutoff,
+      "Newer building stock",
+      "Older building stock",
+      missing = NA_character_
+    )
+  )
+```
+
+## Cooling Updates by Building Age Group
+
+```{r cooling_by_building_age_group}
+cooling_by_building_age_group <- tract_year_analysis %>%
+  filter(!is.na(newer_building_group)) %>%
+  group_by(newer_building_group) %>%
+  summarise(
+    tract_years = n(),
+    total_permits = sum(total_permits, na.rm = TRUE),
+    cooling_air_updates = sum(cooling_air_updates, na.rm = TRUE),
+    percent_cooling_air = round(cooling_air_updates / total_permits * 100, 2),
+    average_heat_days_95 = mean(heat_days_95, na.rm = TRUE),
+    average_svi = mean(svi_overall, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+cooling_by_building_age_group
+```
+
+## Neighborhoods with Newer Building Stock
+
+```{r neighborhood_new_building_summary}
+neighborhood_new_building_summary <- neighborhood_year_analysis %>%
+  group_by(neighborhood) %>%
+  summarise(
+    median_year_built = median(median_year_built, na.rm = TRUE),
+    median_building_age = median(median_building_age, na.rm = TRUE),
+    total_permits = sum(total_permits, na.rm = TRUE),
+    total_cooling_air_updates = sum(cooling_air_updates, na.rm = TRUE),
+    total_trees_planted = sum(trees_planted, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    newer_building_group = if_else(
+      median_year_built >= new_building_cutoff,
+      "Newer building stock",
+      "Older building stock"
+    )
+  ) %>%
+  arrange(desc(median_year_built))
+
+neighborhood_new_building_summary
+```
+
+```{r plot_newer_building_neighborhoods}
+neighborhood_new_building_summary %>%
+  slice_max(median_year_built, n = 15) %>%
+  ggplot(aes(x = reorder(neighborhood, median_year_built), y = median_year_built)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Neighborhoods with Newer Building Stock",
+    subtitle = paste("Newer building cutoff:", new_building_cutoff),
+    x = "Neighborhood",
+    y = "Median year built"
+  ) +
+  theme_minimal()
+```
+
+# Quartile Summaries
+
+Quartiles divide a variable into four groups. This might be easier to interpret than a regression model but it does not "predict"
+
+## Cooling Updates by Heat Exposure Quartile
+
+```{r heat_quartile_summary}
+heat_quartile_summary <- tract_year_analysis %>%
+  mutate(
+    heat_group = ntile(heat_days_95, 4)
+  ) %>%
+  group_by(heat_group) %>%
+  summarise(
+    tract_years = n(),
+    average_heat_days_95 = mean(heat_days_95, na.rm = TRUE),
+    average_cooling_air_updates = mean(cooling_air_updates, na.rm = TRUE),
+    percent_with_any_cooling = round(mean(any_cooling_air_update, na.rm = TRUE) * 100, 2),
+    .groups = "drop"
+  )
+
+heat_quartile_summary
+```
+
+## Cooling Updates by SVI Quartile
+
+```{r svi_quartile_summary}
+svi_quartile_summary <- tract_year_analysis %>%
+  filter(!is.na(svi_overall)) %>%
+  mutate(
+    svi_group = ntile(svi_overall, 4)
+  ) %>%
+  group_by(svi_group) %>%
+  summarise(
+    tract_years = n(),
+    average_svi = mean(svi_overall, na.rm = TRUE),
+    average_cooling_air_updates = mean(cooling_air_updates, na.rm = TRUE),
+    percent_with_any_cooling = round(mean(any_cooling_air_update, na.rm = TRUE) * 100, 2),
+    .groups = "drop"
+  )
+
+svi_quartile_summary
+```
+
+## Cooling Updates by Tree Planting Quartile
+
+```{r tree_quartile_summary}
+tree_quartile_summary <- tract_year_analysis %>%
+  mutate(
+    tree_group = ntile(trees_planted, 4)
+  ) %>%
+  group_by(tree_group) %>%
+  summarise(
+    tract_years = n(),
+    average_trees_planted = mean(trees_planted, na.rm = TRUE),
+    average_cooling_air_updates = mean(cooling_air_updates, na.rm = TRUE),
+    percent_with_any_cooling = round(mean(any_cooling_air_update, na.rm = TRUE) * 100, 2),
+    .groups = "drop"
+  )
+
+tree_quartile_summary
+```
+
+# Save Analysis Outputs
+
+I recommend saving outputs so you do not have to run everything every time!
+
+```{r save_analysis_outputs}
+
+# Create Output folder if it does not already exist.
+
+dir.create("Output", showWarnings = FALSE)
+
+# Save key summary tables.
+
+write_csv(overall_summary, "Output/overall_summary.csv")
+write_csv(yearly_summary, "Output/yearly_summary.csv")
+write_csv(aim1_heat_by_redlining, "Output/aim1_heat_by_redlining.csv")
+write_csv(aim2_cooling_by_redlining, "Output/aim2_cooling_by_redlining.csv")
+write_csv(aim3_trees_by_redlining, "Output/aim3_trees_by_redlining.csv")
+write_csv(neighborhood_investment_summary, "Output/neighborhood_investment_summary.csv")
+write_csv(neighborhood_new_building_summary, "Output/neighborhood_new_building_summary.csv")
+write_csv(heat_quartile_summary, "Output/heat_quartile_summary.csv")
+write_csv(svi_quartile_summary, "Output/svi_quartile_summary.csv")
+write_csv(tree_quartile_summary, "Output/tree_quartile_summary.csv")
+```
+
+

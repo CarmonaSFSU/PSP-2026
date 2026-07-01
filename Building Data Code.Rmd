@@ -17,7 +17,6 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```
 
-
 ```{r load_libraries, echo=FALSE, include=FALSE, eval=TRUE}
 #-----load libraries pacman-----
 
@@ -43,6 +42,9 @@ All of the data sets associated with this file are all publicly available via SF
 Building permit data is separated by before and after 01/01/2013, and it will be used to look at where any A/C related renovations are located. Tax roll and building audit data was mainly used to separate buildings by type, depending on how specific buildings were to be organized. Both data sets provide information about the buildings that could be useful. Due to data privacy, some of this data is available only on the zipcode level. 
 
 ```{r load_data}
+
+# data files are located in Box - PINC 2026 folder 
+
 #building permit data
 before_2013 <- read.csv("Data/Building_Permits_before_January_1,_2013_20260626.csv")
 
@@ -53,8 +55,7 @@ tax_rolls <- read.csv("Data/Assessor_Historical_Secured_Property_Tax_Rolls_20260
 
 #energy compliance data (building type)
 building_audits <- read.csv(
-  "Data/Existing_Buildings_-_Basic_Info_and_Audit_Compliance_Status_20260319.csv"
-)
+  "Data/Existing_Buildings_-_Basic_Info_and_Audit_Compliance_Status_20260319.csv")
 
 ```
 
@@ -504,13 +505,13 @@ final_building_data <- final_building_data %>%
 
 ```{r saving_datasets}
 
-# Save cleaned intermediate datasets
-write_csv(building_permits_all, "Data/building_permits_all.csv")
-write_csv(tax_rolls_clean, "Data/tax_rolls_clean.csv")
-write_csv(building_audits_clean, "Data/building_audits_clean.csv")
-
-# Save merged datasets
-write_csv(final_building_data, "Data/final_building_data.csv")
+# # Save cleaned intermediate datasets
+# write_csv(building_permits_all, "Data/building_permits_all.csv")
+# write_csv(tax_rolls_clean, "Data/tax_rolls_clean.csv")
+# write_csv(building_audits_clean, "Data/building_audits_clean.csv")
+# 
+# # Save merged datasets
+# write_csv(final_building_data, "Data/final_building_data.csv")
 
 ```
 
@@ -745,16 +746,16 @@ cooling_by_audit_building_type
 ```{r}
 
 # save data 
-
-write_csv(parcel_analysis_data, "Data/parcel_analysis_data.csv")
-write_csv(cooling_by_neighborhood, "Data/cooling_by_neighborhood.csv")
-write_csv(cooling_by_zipcode, "Data/cooling_by_zipcode.csv")
-write_csv(cooling_by_census_tract, "Data/cooling_by_census_tract.csv")
-write_csv(housing_age_by_neighborhood, "Data/housing_age_by_neighborhood.csv")
-write_csv(cooling_age_by_neighborhood, "Data/cooling_age_by_neighborhood.csv")
-write_csv(newer_housing_by_neighborhood, "Data/newer_housing_by_neighborhood.csv")
-write_csv(cooling_by_property_use, "Data/cooling_by_property_use.csv")
-write_csv(cooling_by_audit_building_type, "Data/cooling_by_audit_building_type.csv")
+# 
+# write_csv(parcel_analysis_data, "Data/parcel_analysis_data.csv")
+# write_csv(cooling_by_neighborhood, "Data/cooling_by_neighborhood.csv")
+# write_csv(cooling_by_zipcode, "Data/cooling_by_zipcode.csv")
+# write_csv(cooling_by_census_tract, "Data/cooling_by_census_tract.csv")
+# write_csv(housing_age_by_neighborhood, "Data/housing_age_by_neighborhood.csv")
+# write_csv(cooling_age_by_neighborhood, "Data/cooling_age_by_neighborhood.csv")
+# write_csv(newer_housing_by_neighborhood, "Data/newer_housing_by_neighborhood.csv")
+# write_csv(cooling_by_property_use, "Data/cooling_by_property_use.csv")
+# write_csv(cooling_by_audit_building_type, "Data/cooling_by_audit_building_type.csv")
 ```
 
 

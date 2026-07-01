@@ -63,7 +63,7 @@ sf_centroid_df <- sf_centroid_df %>%
 
 
 # save a csv with the centroid locations for San Francisco 
-write.csv(sf_centroid_df, "Data/sf_centroids.csv", row.names = FALSE)
+# write.csv(sf_centroid_df, "Data/sf_centroids.csv", row.names = FALSE)
 
 
 ```
@@ -157,25 +157,13 @@ NCEI (National Centers for Environmental Information) calculates the 85th-percen
 
 • Intensity: how hot the temperature is during a heat wave, compared with the corresponding city-specific threshold. For example, if a city has an 85th-percentile threshold of 95°F, and the average of the daily minimum apparent temperatures during a three-day heat wave was 98°F, the intensity would be recorded as 3°F above the threshold.
 
-Hence, health warnings about extreme heat are often based on NWS’s Heat Index, which is similar to apparent temperature in that it combines temperature and humidity (albeit with a different formula). This indicator specifically uses daily minimum temperature because studies show that mortality is more closely related to elevated daily minimum temperature than to daily maximum or daily mean temperature (Habeeb et al., 2015; Sarofim et al., 2016), as warm nighttime temperatures prevent the body from cooling off after a hot day. For each MSA, NCEI calculated daily maximum and minimum apparent temperature for each day based on hourly temperature and humidity measurements.
+Health warnings about extreme heat are often based on NWS’s Heat Index, which is similar to apparent temperature in that it combines temperature and humidity (albeit with a different formula). This indicator specifically uses daily minimum temperature because studies show that mortality is more closely related to elevated daily minimum temperature than to daily maximum or daily mean temperature (Habeeb et al., 2015; Sarofim et al., 2016), as warm nighttime temperatures prevent the body from cooling off after a hot day. For each MSA, NCEI calculated daily maximum and minimum apparent temperature for each day based on hourly temperature and humidity measurements.
 
 NCEI derived apparent temperature using the following equation:
 
 AT = -1.3 + 0.92T + 2.2e
 
-where AT is the apparent temperature (°C), T is ambient air temperature (°C), and e is water vapor pressure (kilopascals). This equation was established by Steadman (1984).
-
-Based on Huang et al. (2021) we will examine the 97.5th percentile of apparent temperature, based on the minimum temperature. We will use the NCEI equation for apparent temperature, which does differ from Huang et al.'s (2021) equation that uses dew point instead.
-
-Definitions:
-
-1.  AT \> 85th percentile for 2+ days
-
-2.  AT \> 85th percentile for 3+ days
-
-3.  AT \> 97.5th percentile for 2+ days
-
-4.  AT \> 97.5th percentile for 3+ days
+where AT is the apparent temperature (°C), T is ambient air temperature (°C), and e is water vapor pressure (kilopascals). This equation was established by Steadman (1984). We will use minimum temperature to calculate AT given the importance of nighttime cooling. 
 
 ```{r load.data, echo= FALSE}
 
@@ -256,7 +244,7 @@ daymet_present <- long_temp %>%
 #unique(daymet_baseline$site)
 
 # Filter and transform data to wide format; get the mean AT using tmin
-# Can adjust if necessary later.
+# Can adjust if necessary later
 
 daymet_baseline_tmin <- daymet_baseline %>%
   filter(measurement %in% c("AT")) %>%
@@ -271,7 +259,7 @@ daymet_present_wide <- daymet_present %>%
     date = as.Date(paste(year, yday, sep = "-"), "%Y-%j")  )
 
 # Save filtered dataframe to avoid needing to re-load initial baseline file
-write.csv(daymet_baseline_tmin, file = "Data/sf_daymet_filtered_1982_2012.csv", row.names = FALSE)
+# write.csv(daymet_baseline_tmin, file = "Data/sf_daymet_filtered_1982_2012.csv", row.names = FALSE)
 
 ```
 
@@ -307,7 +295,7 @@ heatwaves <- heatwaves %>%
   mutate(
     hw_event_id = rleid(hw95_day), # custom function to assign event IDs
     hw_event_len = ave(hw95_day, hw_event_id, FUN = length),
-    hw95_2day = hw95_day & hw_event_len >= 2,# TRUE for heatwaves that are 2+ days
+    hw95_2day = hw95_day & hw_event_len >= 2, # TRUE for heatwaves that are 2+ days
     hw95_3day = hw95_day & hw_event_len >= 3 # TRUE for heatwaves that are 3+ days
   )
 
@@ -351,7 +339,12 @@ sf_tracts_hw <- merge(
 )
 
 # Save heatwave file
-write.csv(sf_tracts_hw, file = "Data/heatwaves_2012_2022.csv", row.names = FALSE)
+# write.csv(sf_tracts_hw, file = "Data/heatwaves_2012_2022.csv", row.names = FALSE)
+
+# Save heatwave file without geometry for easier processing 
+sf_tracts_hw %>%
+  st_drop_geometry() %>%
+  write_csv("Data/heatwaves_2012_2022.csv")
 
 ```
 
@@ -384,7 +377,8 @@ heatwaves_by_site_year %>%
   arrange(site, year)
 
 # Save heatwave file
-write.csv(heatwaves_by_site_year, file = "Data/heatwave_tractannual_2012_2022.csv", row.names = FALSE)
+
+# write.csv(heatwaves_by_site_year, file = "Data/heatwave_tractannual_2012_2022.csv", row.names = FALSE)
 
 ```
 

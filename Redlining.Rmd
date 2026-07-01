@@ -25,7 +25,6 @@ if (!require("pacman")) {install.packages("pacman")}
 # load other packages, installing as needed
 pacman::p_load(tidyverse, sf, leaflet, tigris)
 
-
 ```
 
 # Introduction
@@ -58,7 +57,6 @@ A spatial file should have:
 #-----load data-----
 
 # save the file path in one object, to make it easier to edit later
-
 redlining_file <- "~/Library/Mobile Documents/com~apple~CloudDocs/Documents/SFSU Faculty/PINC/PINC 2026/PSP-2026/Data/mappinginequality.json"
 
 # read the spatial data 
@@ -99,6 +97,9 @@ sf_redlining <- sf_redlining %>%
 
 # check the HOLC grades after filtering
 table(sf_redlining$grade, useNA = "ifany")
+
+# save sf redlining 
+# write_csv(sf_redlining, "Data/sf_redlining.csv")
 
 ```
 

@@ -1,0 +1,635 @@
+---
+title: "Final Combined Dataset"
+author: "Nancy Carmona"
+date: "`r Sys.Date()`"
+output: html_document
+---
+ 
+```{r setup, include=FALSE}
+#-----setup options-----
+
+# clear the workspace
+rm(list = ls())
+
+# knitr options, shows the code in the knitted HTML file 
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+```{r load_libraries, echo=FALSE, include=FALSE, eval=TRUE}
+#-----load libraries pacman-----
+
+# load pacman, installing if needed
+if (!require("pacman")) {install.packages("pacman")}
+
+# load other packages, installing as needed
+pacman::p_load(tidyverse, lubridate, stringr, tigris, sf, leaflet, readr)
+
+```
+
+
+# Introduction
+
+This code combines several datasets to create a final team data file for all to work on their individual research questions. This includes: 
+
+* Building permits (includes "cooling" indicator, year built and building age [in relation to 2022])
+
+* Heatwave indicators (defined as 2+ days above 95th percentile of historical normal [30-year avg])​
+
+* CDC SVI (main themes and overall index)​
+
+* Historical redlining grades 
+
+* Trees planted (trees planted from 2012 – 2022)
+
+
+Each dataset is cleaned separately first. Then we join them together by census tract and year.
+
+```{r load_data}
+# load cleaned data sets for merging final data 
+
+# Building permits
+final_building_data <- read.csv("Data/final_building_data.csv")
+
+# Heatwave indicators 
+sf_tracts_hw <- read.csv("Data/heatwaves_2012_2022.csv")
+
+# SVI Census Tract level 
+#census level data 
+svi_census <- read.csv("Data/svi_2022_census.csv")
+
+# SVI Zip Code level 
+svi_zcta <- read.csv("Data/svi_2022_zcta.csv")
+
+# SF Redlining 
+redlining <- read_sf("Data/mappinginequality.json")
+
+# Planted trees
+sf_tree <- read.csv("Data/sf_tree.csv")
+
+```
+
+## Building Data 
+
+This code uses final building data that was created using "Building Data Code.Rmd".
+
+The file "final_building_data.csv" is also found in the Box Folder: PINC 2026 > Data > Building Permit Data Sets
+
+```{r data_wrangle_building}
+
+# Clean building permit data for yearly analysis
+
+building_year_clean <- final_building_data %>%
+  mutate(
+    census_tract_geoid = as.character(round(census_tract_geoid, 0)),
+    zipcode = as.character(zipcode),
+    neighborhood = as.character(neighborhood),
+    year = year(ymd_hms(filed_date)),
+    building_age = 2022 - year_built # age as of 2022? 
+  ) %>%
+  filter(
+    !is.na(year),
+    year >= 2012,
+    year <= 2022
+  )
+
+# Check cleaned building data
+building_year_clean %>%
+  select(
+    parcel_id,
+    census_tract_geoid,
+    zipcode,
+    neighborhood,
+    year,
+    cooling_air_update
+  ) %>%
+  head()
+
+# Summarize building permits to census tract + year
+
+building_tract_year <- building_year_clean %>%
+  filter(!is.na(census_tract_geoid)) %>%
+  group_by(census_tract_geoid, year) %>%
+  summarise(
+    total_permits = n(),
+    cooling_air_updates = sum(cooling_air_update, na.rm = TRUE),
+    percent_cooling_air = round(
+      cooling_air_updates / total_permits * 100,
+      2
+    ),
+    median_year_built = median(year_built, na.rm = TRUE),
+    median_building_age = median(building_age, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Check result
+building_tract_year %>%
+  head()
+
+```
+
+## Heat Data 
+
+This code uses final heat data that was created using "Downloading_Daymet_Data.Rmd".
+
+The file "heatwaves_2012_2022.csv" is also found in the Box Folder: PINC 2026 > Data > Daymet Data
+
+```{r data_wrangle_heat}
+
+# Clean and summarize heatwave data to census tract + year
+
+heat_tract_year <- sf_tracts_hw %>%
+  mutate(
+    census_tract_geoid = as.character(site),
+    year = as.numeric(year)
+  ) %>%
+  filter(
+    year >= 2012,
+    year <= 2022
+  ) %>%
+  group_by(census_tract_geoid, year) %>%
+  summarise(
+    heat_days_95 = sum(hw95_day, na.rm = TRUE),
+    heatwave_days_2day = sum(hw95_2day, na.rm = TRUE),
+    heatwave_days_3day = sum(hw95_3day, na.rm = TRUE),
+    heatwave_events_2day = n_distinct(hw_event_id[hw95_2day == TRUE]),
+    heatwave_events_3day = n_distinct(hw_event_id[hw95_3day == TRUE]),
+    mean_apparent_temp = mean(AT, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Check result
+heat_tract_year %>%
+  head()
+
+```
+
+## SVI Data 
+
+This code uses SVI data that was created using "Downloading_SVI_Data.Rmd". The SVI data was downloaded for just CA (not the whole US).
+
+The file "svi_2022_census.csv" and "svi_2022_zcta.csv" is also found in the Box Folder: PINC 2026 > Data > SVI Data Sets
+
+```{r data_wrangle_svi}
+
+# Clean census tract-level SVI data
+
+svi_tract <- svi_census %>%
+  mutate(
+    census_tract_geoid = as.character(round(site, 0))
+  ) %>%
+  select(
+    census_tract_geoid,
+    svi_overall = RPL_THEMES,
+    svi_socioeconomic = RPL_THEME1,
+    svi_household = RPL_THEME2,
+    svi_race_ethnicity = RPL_THEME3,
+    svi_housing_transportation = RPL_THEME4
+  )
+
+
+# Clean ZIP/ZCTA-level SVI data
+
+svi_zip <- svi_zcta %>%
+  mutate(
+    zipcode = as.character(FIPS)
+  ) %>%
+  select(
+    zipcode,
+    zip_svi_overall = RPL_THEMES,
+    zip_svi_socioeconomic = RPL_THEME1,
+    zip_svi_household = RPL_THEME2,
+    zip_svi_race_ethnicity = RPL_THEME3,
+    zip_svi_housing_transportation = RPL_THEME4
+  )
+
+
+# Check cleaned SVI data
+
+glimpse(svi_tract)
+glimpse(svi_zip)
+
+```
+
+## Redlining Data 
+
+This code uses redlining data downloaded from the Mapping Inequality Webiste. The data is also used in the "Redlining.Rmd" which process the data to align with SF.
+
+The file "mappinginequality.json" is also found in the Box Folder: PINC 2026 > Data > Redlining Data
+
+
+```{r data_wrangle_redlining}
+
+# Clean historical redlining data for San Francisco
+
+sf_redlining_clean <- redlining %>%
+  filter(
+    city == "San Francisco",
+    state == "CA"
+  ) %>%
+  st_transform(4326) %>%
+  st_make_valid() %>%
+  mutate(
+    redlining_area_id = area_id,
+    redlining_grade = grade,
+    redlining_category = category,
+    redlining_label = label
+  ) %>%
+  select(
+    redlining_area_id,
+    redlining_grade,
+    redlining_category,
+    redlining_label,
+    geometry
+  )
+
+# Check cleaned redlining data
+sf_redlining_clean %>%
+  st_drop_geometry() %>%
+  count(redlining_grade, redlining_category, sort = TRUE)
+
+```
+
+## Tree Data 
+
+This code uses final tree data that was created using "Tree Canopy.Rmd". 
+
+The file "sf_tree.csv" is also found in the Box Folder: PINC 2026 > Data > Tree Canopy Data
+
+```{r data_wrangle_trees}
+# Clean simplified tree data
+
+tree_clean <- sf_tree %>%
+  st_drop_geometry() %>%
+  mutate(
+    census_tract_geoid = as.character(GEOID),
+    year = as.numeric(Year)
+  ) %>%
+  filter(
+    !is.na(census_tract_geoid),
+    !is.na(year),
+    year >= 2012,
+    year <= 2022
+  ) %>%
+  select(
+    tree_id = TreeID,
+    census_tract_geoid,
+    year
+  )
+
+# Check cleaned tree data
+glimpse(tree_clean)
+
+# Count trees planted by census tract and year
+
+tree_tract_year <- tree_clean %>%
+  group_by(census_tract_geoid, year) %>%
+  summarise(
+    trees_planted = n(),
+    .groups = "drop"
+  )
+
+# Check tree tract-year data
+tree_tract_year %>%
+  head()
+
+
+# Check tree data summary
+
+tree_tract_year %>%
+  summarise(
+    min_year = min(year, na.rm = TRUE),
+    max_year = max(year, na.rm = TRUE),
+    total_tract_years = n(),
+    total_trees_planted = sum(trees_planted, na.rm = TRUE)
+  )
+
+```
+
+## Creating Final Dataset
+ 
+```{r standardize_tract_ids}
+# Make sure all census tract IDs use the same 11-digit format
+
+building_tract_year <- building_tract_year %>%
+  mutate(
+    census_tract_geoid = str_pad(census_tract_geoid, width = 11, side = "left", pad = "0"),
+    year = as.numeric(year)
+  )
+
+heat_tract_year <- heat_tract_year %>%
+  mutate(
+    census_tract_geoid = str_pad(census_tract_geoid, width = 11, side = "left", pad = "0"),
+    year = as.numeric(year)
+  )
+
+tree_tract_year <- tree_tract_year %>%
+  mutate(
+    census_tract_geoid = str_pad(census_tract_geoid, width = 11, side = "left", pad = "0"),
+    year = as.numeric(year)
+  )
+
+svi_tract <- svi_tract %>%
+  mutate(
+    census_tract_geoid = str_pad(census_tract_geoid, width = 11, side = "left", pad = "0")
+  )
+
+svi_zip <- svi_zip %>%
+  mutate(
+    zipcode = as.character(zipcode)
+  )
+```
+
+
+
+```{r prepare_redlining_tract}
+# Prepare redlining data at the census tract level
+ 
+options(tigris_use_cache = TRUE)
+
+# Get San Francisco census tract boundaries
+sf_tracts_for_join <- tracts(
+  state = "CA",
+  county = "San Francisco",
+  year = 2020,
+  cb = TRUE
+) %>%
+  st_transform(4326) %>%
+  select(
+    census_tract_geoid = GEOID,
+    geometry
+  )
+
+# Make sure redlining polygons are clean
+sf_redlining_clean <- sf_redlining_clean %>%
+  st_transform(4326) %>%
+  st_make_valid()
+
+# Turn off s2 for polygon intersection
+sf_use_s2(FALSE)
+
+# Intersect census tracts with redlining areas
+redlining_tract_overlap <- st_intersection(
+  sf_tracts_for_join,
+  sf_redlining_clean
+) %>%
+  st_transform(3310) %>%
+  mutate(
+    overlap_area = as.numeric(st_area(geometry))
+  ) %>%
+  st_drop_geometry()
+
+sf_use_s2(TRUE)
+
+# Keep the redlining grade with the largest overlap in each tract
+redlining_tract <- redlining_tract_overlap %>%
+  group_by(census_tract_geoid) %>%
+  slice_max(overlap_area, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  select(
+    census_tract_geoid,
+    dominant_redlining_grade = redlining_grade,
+    dominant_redlining_category = redlining_category,
+    dominant_redlining_area_id = redlining_area_id
+  )
+
+# Check result
+redlining_tract %>%
+  count(dominant_redlining_grade, dominant_redlining_category, sort = TRUE)
+
+```
+
+```{r create_tract_year_full}
+# Create the full census tract-year dataset
+
+tract_year_full <- building_tract_year %>%
+  full_join(
+    heat_tract_year,
+    by = c("census_tract_geoid", "year")
+  ) %>%
+  full_join(
+    tree_tract_year,
+    by = c("census_tract_geoid", "year")
+  ) %>%
+  left_join(
+    svi_tract,
+    by = "census_tract_geoid"
+  ) %>%
+  left_join(
+    redlining_tract,
+    by = "census_tract_geoid"
+  )
+
+# Check final tract-year dataset
+glimpse(tract_year_full)
+
+```
+
+
+
+Create tract-to-ZIP and tract-to-neighborhood lookup tables
+
+```{r create_zip_neighborhood_lookup}
+# Create lookup tables from census tracts to ZIP codes and neighborhoods
+
+# For each census tract, keep the most common ZIP code
+tract_zip_lookup <- final_building_data %>%
+  mutate(
+    census_tract_geoid = str_pad(
+      as.character(round(census_tract_geoid, 0)),
+      width = 11,
+      side = "left",
+      pad = "0"
+    ),
+    zipcode = as.character(zipcode)
+  ) %>%
+  filter(
+    !is.na(census_tract_geoid),
+    !is.na(zipcode)
+  ) %>%
+  count(census_tract_geoid, zipcode, sort = TRUE) %>%
+  group_by(census_tract_geoid) %>%
+  slice_max(n, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  select(
+    census_tract_geoid,
+    zipcode
+  )
+
+
+# For each census tract, keep the most common neighborhood
+tract_neighborhood_lookup <- final_building_data %>%
+  mutate(
+    census_tract_geoid = str_pad(
+      as.character(round(census_tract_geoid, 0)),
+      width = 11,
+      side = "left",
+      pad = "0"
+    ),
+    neighborhood = as.character(neighborhood)
+  ) %>%
+  filter(
+    !is.na(census_tract_geoid),
+    !is.na(neighborhood),
+    neighborhood != ""
+  ) %>%
+  count(census_tract_geoid, neighborhood, sort = TRUE) %>%
+  group_by(census_tract_geoid) %>%
+  slice_max(n, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  select(
+    census_tract_geoid,
+    neighborhood
+  )
+
+# Check data
+
+tract_zip_lookup %>%
+  head()
+
+tract_neighborhood_lookup %>%
+  head()
+```
+
+
+Create ZIP code-year dataset
+
+This summarizes the tract-year dataset up to ZIP code and year.
+
+
+```{r create_zip_year_full}
+# Create ZIP code-year dataset
+
+zip_year_full <- tract_year_full %>%
+  left_join(
+    tract_zip_lookup,
+    by = "census_tract_geoid"
+  ) %>%
+  filter(!is.na(zipcode)) %>%
+  group_by(zipcode, year) %>%
+  summarise(
+    total_permits = sum(total_permits, na.rm = TRUE),
+    cooling_air_updates = sum(cooling_air_updates, na.rm = TRUE),
+    percent_cooling_air = round(
+      cooling_air_updates / total_permits * 100,
+      2
+    ),
+
+    median_year_built = median(median_year_built, na.rm = TRUE),
+    median_building_age = median(median_building_age, na.rm = TRUE),
+
+    heat_days_95 = mean(heat_days_95, na.rm = TRUE),
+    heatwave_days_2day = mean(heatwave_days_2day, na.rm = TRUE),
+    heatwave_days_3day = mean(heatwave_days_3day, na.rm = TRUE),
+    heatwave_events_2day = mean(heatwave_events_2day, na.rm = TRUE),
+    heatwave_events_3day = mean(heatwave_events_3day, na.rm = TRUE),
+    mean_apparent_temp = mean(mean_apparent_temp, na.rm = TRUE),
+
+    trees_planted = sum(trees_planted, na.rm = TRUE),
+
+    mean_svi_overall = mean(svi_overall, na.rm = TRUE),
+    mean_svi_socioeconomic = mean(svi_socioeconomic, na.rm = TRUE),
+    mean_svi_household = mean(svi_household, na.rm = TRUE),
+    mean_svi_race_ethnicity = mean(svi_race_ethnicity, na.rm = TRUE),
+    mean_svi_housing_transportation = mean(svi_housing_transportation, na.rm = TRUE),
+
+    .groups = "drop"
+  ) %>%
+  left_join(
+    svi_zip,
+    by = "zipcode"
+  )
+
+# Check ZIP code-year dataset
+glimpse(zip_year_full)
+
+```
+
+Create neighborhood-year dataset
+
+```{r create_neighborhood_year_full}
+# Create neighborhood-year dataset
+
+neighborhood_year_full <- tract_year_full %>%
+  left_join(
+    tract_neighborhood_lookup,
+    by = "census_tract_geoid"
+  ) %>%
+  filter(!is.na(neighborhood)) %>%
+  group_by(neighborhood, year) %>%
+  summarise(
+    total_permits = sum(total_permits, na.rm = TRUE),
+    cooling_air_updates = sum(cooling_air_updates, na.rm = TRUE),
+    percent_cooling_air = round(
+      cooling_air_updates / total_permits * 100,
+      2
+    ),
+
+    median_year_built = median(median_year_built, na.rm = TRUE),
+    median_building_age = median(median_building_age, na.rm = TRUE),
+
+    heat_days_95 = mean(heat_days_95, na.rm = TRUE),
+    heatwave_days_2day = mean(heatwave_days_2day, na.rm = TRUE),
+    heatwave_days_3day = mean(heatwave_days_3day, na.rm = TRUE),
+    heatwave_events_2day = mean(heatwave_events_2day, na.rm = TRUE),
+    heatwave_events_3day = mean(heatwave_events_3day, na.rm = TRUE),
+    mean_apparent_temp = mean(mean_apparent_temp, na.rm = TRUE),
+
+    trees_planted = sum(trees_planted, na.rm = TRUE),
+
+    mean_svi_overall = mean(svi_overall, na.rm = TRUE),
+    mean_svi_socioeconomic = mean(svi_socioeconomic, na.rm = TRUE),
+    mean_svi_household = mean(svi_household, na.rm = TRUE),
+    mean_svi_race_ethnicity = mean(svi_race_ethnicity, na.rm = TRUE),
+    mean_svi_housing_transportation = mean(svi_housing_transportation, na.rm = TRUE),
+
+    .groups = "drop"
+  )
+
+# Check neighborhood-year dataset
+glimpse(neighborhood_year_full)
+
+```
+
+Check final datasets
+
+```{r check_final_geography_datasets}
+# Check number of rows and years in each dataset
+
+tract_year_full %>%
+  summarise(
+    geography = "Census tract",
+    rows = n(),
+    geographies = n_distinct(census_tract_geoid),
+    min_year = min(year, na.rm = TRUE),
+    max_year = max(year, na.rm = TRUE)
+  )
+
+zip_year_full %>%
+  summarise(
+    geography = "ZIP code",
+    rows = n(),
+    geographies = n_distinct(zipcode),
+    min_year = min(year, na.rm = TRUE),
+    max_year = max(year, na.rm = TRUE)
+  )
+
+neighborhood_year_full %>%
+  summarise(
+    geography = "Neighborhood",
+    rows = n(),
+    geographies = n_distinct(neighborhood),
+    min_year = min(year, na.rm = TRUE),
+    max_year = max(year, na.rm = TRUE)
+  )
+
+
+```
+
+
+```{r save_final_datasets}
+
+# Save final  datasets
+write_csv(tract_year_full, "Data/tract_year_full.csv")
+write_csv(zip_year_full, "Data/zip_year_full.csv")
+write_csv(neighborhood_year_full, "Data/neighborhood_year_full.csv")
