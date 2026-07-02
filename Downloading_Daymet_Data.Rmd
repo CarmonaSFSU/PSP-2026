@@ -173,9 +173,10 @@ sf_daymet <- read_csv("Data/sf_daymet_clean.csv")
 
 ```
 
-Water vapor pressure vp Pa Water vapor pressure in pascals. Daily average partial pressure of water vapor.
+Water vapor pressure `vp` Pa Water vapor pressure in pascals. Daily average partial pressure of water vapor.
 
 We need to transform the vp variable from pascals to kilopascals. We divide the pressure value by 1000.
+
 
 ```{r apparent.temperature, echo = FALSE}
 
@@ -226,18 +227,21 @@ In this step, we filtered the full Daymet dataset into separate baseline and pre
 
 ```{r baseline_normal, include = FALSE}
 
+
 # Create baseline temperatures (30 year normal)
+# 30-year baseline immediately preceding the 10-year exposure period
 # This period represents the long-term temperature record used to define
 # typical or "normal" temperature conditions for each site.
+# Note: Fixed code on 7/2 to make sure no overlap in 2012 
 daymet_baseline <- long_temp %>%
-  filter(year >= 1982 & year <= 2012) 
-
+  filter(year >= 1983 & year <= 2012)
 
 # Create present temperatures  
+# 10-year heat exposure period ending in 2022
 # This period will be compared against the baseline to identify recent
 # heatwave days and heatwave events.
 daymet_present <- long_temp %>%
-  filter(year >= 2012 & year <= 2022) 
+  filter(year >= 2013 & year <= 2022)
 
 
 #str(daymet_baseline)
@@ -259,17 +263,17 @@ daymet_present_wide <- daymet_present %>%
     date = as.Date(paste(year, yday, sep = "-"), "%Y-%j")  )
 
 # Save filtered dataframe to avoid needing to re-load initial baseline file
-# write.csv(daymet_baseline_tmin, file = "Data/sf_daymet_filtered_1982_2012.csv", row.names = FALSE)
+# write.csv(daymet_baseline_tmin, file = "Data/sf_daymet_filtered_1983_2012.csv", row.names = FALSE)
 
 ```
 
-## Defining heatwave days and heatwave events
+## Defining extreme heat days and heatwave events
 
-To identify heatwave days, We first calculated the 95th percentile of apparent temperature (`AT`) during the historical baseline period for each census tract. This creates a site-specific heat threshold, meaning that each tract is compared to its own historical temperature distribution rather than to a single citywide cutoff.
+To identify heatwave (extreme heat) days, We first calculated the 95th percentile of apparent temperature (`AT`) during the historical baseline period for each census tract. This creates a site-specific heat threshold, meaning that each tract is compared to its own historical temperature distribution rather than to a single citywide cutoff. Days when census-tract-level apparent temperature based on daily minimum temperature and humidity is unusually high compared with that tract’s historical baseline.
 
 After calculating the 95th percentile threshold, we joined the threshold values to the present-day temperature dataset. We then created a logical indicator, `hw95_day`, which identifies whether the apparent temperature on a given day was greater than or equal to the tract-specific 95th percentile threshold.
 
-Next, we identified consecutive heatwave days. This step is important because a heatwave is usually defined as a period of sustained extreme heat rather than a single isolated hot day. The event ID variable groups consecutive heatwave and non-heatwave periods within each census tract. We then calculated the length of each event and created indicators for heatwave periods lasting at least 2 days and at least 3 days.
+Next, we identified consecutive heatwave (extreme heat) days. This step is important because a heatwave is usually defined as a period of sustained extreme heat rather than a single isolated hot day. The event ID variable groups consecutive heatwave and non-heatwave periods within each census tract. We then calculated the length of each event and created indicators for heatwave periods lasting at least 2 days and at least 3 days.
 
 ```{r percentiles, include = FALSE}
 
@@ -311,6 +315,10 @@ We then merged the census tract geometry with the heatwave dataset using the sha
 
 ```{r merge_census_tracts_heatwaves, include = FALSE}
 
+# Note: you will need to run the code below to get shapes if you starting from already processed data 
+# sf_tracts <- tracts(state = "CA", county = "San Francisco", year = 2020, class = "sf")
+
+
 # rename to merge census tracts with heatwaves 
 sf_tracts <- sf_tracts %>% 
                         rename(site = GEOID,
@@ -339,36 +347,59 @@ sf_tracts_hw <- merge(
 )
 
 # Save heatwave file
-# write.csv(sf_tracts_hw, file = "Data/heatwaves_2012_2022.csv", row.names = FALSE)
+# write.csv(sf_tracts_hw, file = "Data/heatwaves_2013_2022.csv", row.names = FALSE)
 
 # Save heatwave file without geometry for easier processing 
+# Note: on 7/2 changed file to 2013 to 2022 to have 10 years
 sf_tracts_hw %>%
   st_drop_geometry() %>%
-  write_csv("Data/heatwaves_2012_2022.csv")
+  write_csv("Data/heatwaves_2013_2022.csv")
 
 ```
 
 ## Summarizing heatwaves by census tract and year
 
-After identifying heatwave days, we summarized the data to estimate the number of heatwave events for each census tract in each year. Because the dataset contains one row per day for each census tract, we counted the number of distinct heatwave event IDs rather than simply counting rows. This avoids counting multiple days from the same heatwave as separate heatwave events.
+After identifying heatwave days, we summarized the data to estimate the number of heatwave (extreme heat) events for each census tract in each year. A heatwave event (extreme heat day) means in a specific day, this census tract’s apparent temperature was greater than or equal to its own historical 95th percentile.
+
+Because the dataset contains one row per day for each census tract, we counted the number of distinct heatwave event IDs rather than simply counting rows. This avoids counting multiple days from the same heatwave as separate heatwave events.
 
 We also calculated the total number of heatwave days per census tract and year. This gives two related but different measures: the number of heatwave events and the total number of days spent in heatwave conditions.
 
-The variable `n_heatwaves` represents the number of distinct heatwave events in a census tract during a given year. The variable `n_heatwave_days` represents the total number of days classified as heatwave days in that tract and year.
+The variable `n_heatwaves` represents the number of distinct heatwave (extreme heat) events in a census tract during a given year. The variable `n_heatwave_days` represents the total number of days classified as heatwave days (only 1 day not consecutive) in that tract and year.
+
+`n_extreme_heat_events_1day` counts isolated one-day extreme heat events. 
+`n_heatwaves_2plus_days` counts events lasting two or more consecutive extreme heat days.
+`n_heatwaves_3plus_days` counts events lasting three or more consecutive extreme heat days. `n_total_extreme_heat_events` is the total number of extreme heat events of any length.
+`n_total_extreme_heat_days` is the total number of days spent in extreme heat events during that tract-year.
 
 ```{r annual_heatwaves, include = FALSE}
 
 # heatwave events per year 
 heatwaves_by_site_year <- sf_tracts_hw %>%
   st_drop_geometry() %>%
-  filter(hw95_day == TRUE) %>%
+  arrange(site, date) %>%
+  group_by(site) %>%
+  mutate(
+    new_event = hw95_day & !lag(hw95_day, default = FALSE),
+    event_id = cumsum(new_event),
+    event_id = if_else(hw95_day, event_id, NA_integer_)
+  ) %>%
+  filter(hw95_day) %>%
+  group_by(site, event_id) %>%
+  summarise(
+    year = min(year),
+    event_len_days = n(),
+    .groups = "drop"
+  ) %>%
   group_by(site, year) %>%
-  summarize(
-    n_heatwaves = n_distinct(hw_event_id),
-    n_heatwave_days = n(),
+  summarise(
+    n_extreme_heat_events_1day = sum(event_len_days == 1),
+    n_heatwaves_2plus_days = sum(event_len_days >= 2),
+    n_heatwaves_3plus_days = sum(event_len_days >= 3),
+    n_total_extreme_heat_events = n(),
+    n_total_extreme_heat_days = sum(event_len_days),
     .groups = "drop"
   )
-
 
 # check 
 head(heatwaves_by_site_year)
@@ -378,7 +409,7 @@ heatwaves_by_site_year %>%
 
 # Save heatwave file
 
-# write.csv(heatwaves_by_site_year, file = "Data/heatwave_tractannual_2012_2022.csv", row.names = FALSE)
+# write.csv(heatwaves_by_site_year, file = "Data/heatwave_tractannual_2013_2022.csv", row.names = FALSE)
 
 ```
 
@@ -393,9 +424,9 @@ The line plot shows year-to-year variation in the mean number of heatwave events
 heatwaves_year_summary <- heatwaves_by_site_year %>%
   group_by(year) %>%
   summarize(
-    mean_heatwaves = mean(n_heatwaves, na.rm = TRUE),
-    median_heatwaves = median(n_heatwaves, na.rm = TRUE),
-    max_heatwaves = max(n_heatwaves, na.rm = TRUE),
+    mean_heatwaves = mean(n_heatwaves_2plus_days, na.rm = TRUE),
+    median_heatwaves = median(n_heatwaves_2plus_days, na.rm = TRUE),
+    max_heatwaves = max(n_heatwaves_2plus_days, na.rm = TRUE),
     .groups = "drop"
   )
 
@@ -404,13 +435,13 @@ ggplot(heatwaves_year_summary, aes(x = year, y = mean_heatwaves)) +
   geom_line() +
   geom_point() +
 scale_x_continuous(
-  breaks = 2012:2022,
+  breaks = 2013:2022,
   minor_breaks = NULL
 ) +
   labs(
-    title = "Average number of heatwaves per year across census tracts",
+    title = "Average number of 2+ day heatwaves per year across census tracts",
     x = "Year",
-    y = "Mean number of heatwaves"
+    y = "Mean number of 2+ day heatwaves"
   ) +
   theme_minimal()
 
