@@ -52,7 +52,8 @@ Each dataset is cleaned separately first. Then we join them together by census t
 final_building_data <- read.csv("Data/final_building_data.csv")
 
 # Heatwave indicators 
-sf_tracts_hw <- read.csv("Data/heatwaves_2012_2022.csv")
+# updated on 7/2 with 2013 to 2022
+sf_tracts_hw <- read.csv("Data/heatwaves_2013_2022.csv")
 
 # SVI Census Tract level 
 #census level data 
@@ -136,25 +137,35 @@ The file "heatwaves_2012_2022.csv" is also found in the Box Folder: PINC 2026 > 
 
 ```{r data_wrangle_heat}
 
-# Clean and summarize heatwave data to census tract + year
+# Clean and summarize heat data to census tract + year
+# Noted updated 7/2 with exposure period of 2013-2022
 
 heat_tract_year <- sf_tracts_hw %>%
   mutate(
     census_tract_geoid = as.character(site),
+    date = as.Date(date),
     year = as.numeric(year)
   ) %>%
   filter(
-    year >= 2012,
+    year >= 2013,
     year <= 2022
   ) %>%
   group_by(census_tract_geoid, year) %>%
   summarise(
+    # Extreme heat days: any day with AT >= tract-specific 95th percentile
     heat_days_95 = sum(hw95_day, na.rm = TRUE),
+    
+    # Heatwave days: days that are part of multi-day heatwave events
     heatwave_days_2day = sum(hw95_2day, na.rm = TRUE),
     heatwave_days_3day = sum(hw95_3day, na.rm = TRUE),
+    
+    # Heatwave events: number of distinct multi-day events
     heatwave_events_2day = n_distinct(hw_event_id[hw95_2day == TRUE]),
     heatwave_events_3day = n_distinct(hw_event_id[hw95_3day == TRUE]),
+    
+    # Average apparent temperature across all days in that tract-year
     mean_apparent_temp = mean(AT, na.rm = TRUE),
+    
     .groups = "drop"
   )
 
@@ -630,6 +641,7 @@ neighborhood_year_full %>%
 ```{r save_final_datasets}
 
 # Save final  datasets
+# Updated on 7/2 due to updated heat metrics (overlap issue before)
 write_csv(tract_year_full, "Data/tract_year_full.csv")
 write_csv(zip_year_full, "Data/zip_year_full.csv")
 write_csv(neighborhood_year_full, "Data/neighborhood_year_full.csv")
