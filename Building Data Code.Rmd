@@ -31,7 +31,7 @@ pacman::p_load(tidyverse, lubridate, stringr, tigris, sf, leaflet)
 
 # Building Data Analysis 
 
-All of the data sets associated with this file are all publicly available via SF Data Portal, which is the city of San Francisco's go to site to obtain data on the city. There is a lot of data to sift through and organize, especially if we're looking at different building types and where they are. The originial goal of downloading all of these data sets was to: 
+All of the data sets associated with this file are all publicly available via SF Data Portal, which is the city of San Francisco's go to site to obtain data on the city. There is a lot of data to sift through and organize, especially if we're looking at different building types and where they are. The original goal of downloading all of these data sets was to: 
 
 1. Determine the A/C stock in the city 
 2. Organize the city by building type
@@ -43,76 +43,87 @@ Building permit data is separated by before and after 01/01/2013, and it will be
 
 ```{r load_data}
 
-# data files are located in Box - PINC 2026 folder 
+# data files are located in Box - "PINC 2026 > Data > Building Permit Data Sets" folder  
+# when loading data make sure you have the correct file path for your computer 
 
-#building permit data
+# building permit data
+# updated on 06/26 to include all historical data
 before_2013 <- read.csv("Data/Building_Permits_before_January_1,_2013_20260626.csv")
 
 after_2013 <- read.csv("Data/Building_Permits_filed_on_or_after_January_1,_2013_20260319.csv")
 
-#tax data (building type)
+# tax data (building type)
 tax_rolls <- read.csv("Data/Assessor_Historical_Secured_Property_Tax_Rolls_20260319.csv")
 
-#energy compliance data (building type)
+# energy compliance data (building type)
 building_audits <- read.csv(
   "Data/Existing_Buildings_-_Basic_Info_and_Audit_Compliance_Status_20260319.csv")
 
 ```
 
  
-The permit data comes in two files: permits before 2013 and permits after 2013. We first cleaned them separately so they have the same column names, then combine them.
+The permit data comes in two files: permits before 2013 and permits after 2013. We first cleaned them separately so they have the same column names, then we combine them.
 
 ```{r before_2013}
 
-# create new data set 
-# rename variables and select only the ones needed 
-
+# Clean pre-2013 building permit data
 before_2013_clean <- before_2013 %>%
   mutate(
+    # Add source label so we know which file each record came from
     data_source = "before_2013",
     
-    block_clean = str_pad(as.character(Block), width = 4, side = "left", pad = "0"),
-    lot_clean = str_pad(as.character(Lot), width = 3, side = "left", pad = "0"),
-    parcel_id = str_c(block_clean, lot_clean),
-    
+    # Rename permit ID and permit type variables
     permit_number = as.character(Permit.Number),
     permit_type = as.character(Permit.Type),
     permit_type_definition = Permit.Type.Definition,
     
+    # Convert date variables to date-time format
     permit_creation_date = ymd_hms(Permit.Creation.Date, quiet = TRUE),
     filed_date = ymd_hms(Filed.Date, quiet = TRUE),
     issued_date = ymd_hms(Issued.Date, quiet = TRUE),
     completed_date = ymd_hms(Completed.Date, quiet = TRUE),
     
+    # Rename status and description variables
     current_status = Current.Status,
     description = Description,
     
+    # Clean block and lot numbers and create parcel ID
     block = as.character(Block),
     lot = as.character(Lot),
+    block_clean = str_pad(block, 4, pad = "0"),
+    lot_clean = str_pad(lot, 3, pad = "0"),
+    parcel_id = str_c(block_clean, lot_clean),
     
+    # Rename address variables
     street_number = as.character(Street.Number),
     street_name = Street.Name,
     street_suffix = Street.Suffix,
     
+    # Rename geography variables
     zipcode = as.character(Zipcode),
     supervisor_district = as.character(supervisor_district),
     neighborhood = neighborhoods_analysis_boundaries,
     
+    # Rename building use and unit variables
     existing_use = Existing.Use,
     proposed_use = Proposed.Use,
     existing_units = as.numeric(Existing.Units),
     proposed_units = as.numeric(Proposed.Units),
     
+    # Rename cost variables
     estimated_cost = as.numeric(Estimated.Cost),
     revised_cost = as.numeric(Revised.Cost),
     
+    # Rename record ID
     record_id = as.character(Record.ID),
     
+    # Add missing location columns so this dataset matches later permit data
     location = NA_character_,
     longitude = NA_real_,
     latitude = NA_real_
   ) %>%
   select(
+    # Keep only the cleaned variables needed for analysis
     data_source,
     permit_number,
     permit_type,
@@ -151,55 +162,64 @@ before_2013_clean <- before_2013 %>%
 
 ```{r after_2013}
 
-# create new data set 
-# rename variables and select only the ones needed 
-
+# Clean 2013 and later building permit data
 after_2013_clean <- after_2013 %>%
   mutate(
+    # Add source label so we know which file each record came from
     data_source = "after_2013",
     
-    block_clean = str_pad(as.character(Block), width = 4, side = "left", pad = "0"),
-    lot_clean = str_pad(as.character(Lot), width = 3, side = "left", pad = "0"),
-    parcel_id = str_c(block_clean, lot_clean),
-    
+    # Rename permit ID and permit type variables
     permit_number = as.character(Permit.Number),
     permit_type = as.character(Permit.Type),
     permit_type_definition = Permit.Type.Definition,
     
+    # Convert date variables to date-time format
     permit_creation_date = ymd_hms(Permit.Creation.Date, quiet = TRUE),
     filed_date = ymd_hms(Filed.Date, quiet = TRUE),
     issued_date = ymd_hms(Issued.Date, quiet = TRUE),
     completed_date = ymd_hms(Completed.Date, quiet = TRUE),
     
+    # Rename status and description variables
     current_status = Current.Status,
     description = Description,
     
+    # Clean block and lot numbers and create parcel ID
     block = as.character(Block),
     lot = as.character(Lot),
+    block_clean = str_pad(block, 4, pad = "0"),
+    lot_clean = str_pad(lot, 3, pad = "0"),
+    parcel_id = str_c(block_clean, lot_clean),
     
+    # Rename address variables
     street_number = as.character(Street.Number),
     street_name = Street.Name,
     street_suffix = Street.Suffix,
     
+    # Rename geography variables
     zipcode = as.character(Zipcode),
     supervisor_district = as.character(supervisor_district),
     neighborhood = neighborhoods_analysis_boundaries,
     
+    # Rename building use and unit variables
     existing_use = Existing.Use,
     proposed_use = Proposed.Use,
     existing_units = as.numeric(Existing.Units),
     proposed_units = as.numeric(Proposed.Units),
     
+    # Rename cost variables
     estimated_cost = as.numeric(Estimated.Cost),
     revised_cost = as.numeric(Revised.Cost),
     
+    # Rename record ID
     record_id = as.character(Record.ID),
     
+    # Keep original location field and pull out longitude/latitude
     location = Location,
     longitude = as.numeric(str_extract(Location, "-\\d+\\.\\d+")),
     latitude = as.numeric(str_extract(Location, "\\d+\\.\\d+\\)") %>% str_remove("\\)"))
   ) %>%
   select(
+    # Keep only the cleaned variables needed for analysis
     data_source,
     permit_number,
     permit_type,
@@ -233,17 +253,173 @@ after_2013_clean <- after_2013 %>%
     latitude
   )
 
+```
+
+We should always explore our data and check it is correct before we work with it. 
+
+```{r data_check}
+
+# it is important to check your processed data to make sure it did what you want it to do!
+
+# ------------------------------------------------------------
+# Review cleaned building permit datasets
+# ------------------------------------------------------------
+
+# Check number of rows and columns
+dim(before_2013_clean)
+dim(after_2013_clean)
+
+# Preview the first few rows
+head(before_2013_clean)
+head(after_2013_clean)
+
+# Check variable names
+names(before_2013_clean)
+names(after_2013_clean)
+
+# Check variable types (shows you rows, columns, names, data type, first observations)
+glimpse(before_2013_clean)
+glimpse(after_2013_clean)
+
+# Summary of each dataset (gives you descriptive statistics for each variable)
+summary(before_2013_clean)
+summary(after_2013_clean)
+
+
+# ------------------------------------------------------------
+# Check that datasets have the same structure
+# ------------------------------------------------------------
+
+# Check whether both datasets have the same column names
+setequal(names(before_2013_clean), names(after_2013_clean))
+
+# Check whether the columns are in the same order
+identical(names(before_2013_clean), names(after_2013_clean))
+
+# See columns in before_2013_clean that are missing from after_2013_clean
+setdiff(names(before_2013_clean), names(after_2013_clean))
+
+# See columns in after_2013_clean that are missing from before_2013_clean
+setdiff(names(after_2013_clean), names(before_2013_clean))
+
+# ------------------------------------------------------------
+# Check missing values
+# ------------------------------------------------------------
+
+before_2013_clean %>%
+  summarise(across(everything(), ~ sum(is.na(.)))) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = "variable",
+    values_to = "n_missing"
+  ) %>%
+  arrange(desc(n_missing))
+
+after_2013_clean %>%
+  summarise(across(everything(), ~ sum(is.na(.)))) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = "variable",
+    values_to = "n_missing"
+  ) %>%
+  arrange(desc(n_missing))
+
+# ------------------------------------------------------------
+# Check duplicate permit records
+# ------------------------------------------------------------
+
+before_2013_clean %>%
+  count(permit_number, record_id) %>%
+  filter(n > 1)
+
+after_2013_clean %>%
+  count(permit_number, record_id) %>%
+  filter(n > 1)
+
+
+# ------------------------------------------------------------
+# Check for negative values where negatives should not happen
+# ------------------------------------------------------------
+
+before_2013_clean %>%
+  summarise(
+    negative_existing_units = sum(existing_units < 0, na.rm = TRUE),
+    negative_proposed_units = sum(proposed_units < 0, na.rm = TRUE),
+    negative_estimated_cost = sum(estimated_cost < 0, na.rm = TRUE),
+    negative_revised_cost = sum(revised_cost < 0, na.rm = TRUE)
+  )
+
+after_2013_clean %>%
+  summarise(
+    negative_existing_units = sum(existing_units < 0, na.rm = TRUE),
+    negative_proposed_units = sum(proposed_units < 0, na.rm = TRUE),
+    negative_estimated_cost = sum(estimated_cost < 0, na.rm = TRUE),
+    negative_revised_cost = sum(revised_cost < 0, na.rm = TRUE)
+  )
+
+# ------------------------------------------------------------
+# Check date ranges
+# ------------------------------------------------------------
+
+before_2013_clean %>%
+  summarise(
+    earliest_filed_date = min(filed_date, na.rm = TRUE),
+    latest_filed_date = max(filed_date, na.rm = TRUE),
+    earliest_issued_date = min(issued_date, na.rm = TRUE),
+    latest_issued_date = max(issued_date, na.rm = TRUE)
+  )
+
+after_2013_clean %>%
+  summarise(
+    earliest_filed_date = min(filed_date, na.rm = TRUE),
+    latest_filed_date = max(filed_date, na.rm = TRUE),
+    earliest_issued_date = min(issued_date, na.rm = TRUE),
+    latest_issued_date = max(issued_date, na.rm = TRUE)
+  )
+
+# ------------------------------------------------------------
+# Check geography and location variables
+# ------------------------------------------------------------
+
+before_2013_clean %>%
+  summarise(
+    missing_zipcode = sum(is.na(zipcode)),
+    missing_neighborhood = sum(is.na(neighborhood)),
+    missing_supervisor_district = sum(is.na(supervisor_district)),
+    missing_parcel_id = sum(is.na(parcel_id))
+  )
+
+after_2013_clean %>%
+  summarise(
+    missing_zipcode = sum(is.na(zipcode)),
+    missing_neighborhood = sum(is.na(neighborhood)),
+    missing_supervisor_district = sum(is.na(supervisor_district)),
+    missing_parcel_id = sum(is.na(parcel_id)),
+    missing_longitude = sum(is.na(longitude)),
+    missing_latitude = sum(is.na(latitude))
+  )
+
 
 ```
 
 
 ```{r combine_permits}
 
-# combine data sets 
+# ------------------------------------------------------------
+# Combine datasets only after structure checks look okay
+# ------------------------------------------------------------
+
 building_permits_all <- bind_rows(
   before_2013_clean,
   after_2013_clean
 )
+
+# Review combined dataset
+glimpse(building_permits_all)
+dim(building_permits_all)
+
+building_permits_all %>%
+  count(data_source)
 
 ```
 
@@ -293,48 +469,57 @@ building_permits_all %>%
 ```{r tax_rolls}
 
 # data cleaning for tax roll data
-
-# Find the most recent tax roll year in the data
-latest_tax_year <- tax_rolls %>%
-  summarise(latest_year = max(Closed.Roll.Year, na.rm = TRUE)) %>%
-  pull(latest_year)
-
-latest_tax_year
-
-# rename variables to simplify 
 # only keep the variables needed for analysis since it is a really large file 
+# we are using one tax roll record per parcel, ideally 2022 which matches other data sources 
+
+ # ------------------------------------------------------------
+# Clean tax roll data
+# Keep oldest year_built, but newest parcel/building characteristics
+# Drop parcels with no year_built
+# ------------------------------------------------------------
 
 tax_rolls_clean <- tax_rolls %>%
-  filter(Closed.Roll.Year == latest_tax_year) %>%
+  filter(Closed.Roll.Year <= 2022) %>%
   mutate(
     parcel_id = as.character(Parcel.Number),
     
     tax_roll_year = Closed.Roll.Year,
-    year_built = Year.Property.Built,
+    year_built = as.numeric(Year.Property.Built),
     property_use = Use.Definition,
     property_class = Property.Class.Code.Definition,
     number_of_units = parse_number(Number.of.Units),
-    number_of_stories = Number.of.Stories,
+    number_of_stories = as.numeric(Number.of.Stories),
     zoning_code = Zoning.Code,
     tax_roll_neighborhood = Analysis.Neighborhood,
     tax_roll_supervisor_district = as.character(Supervisor.District),
     parcel_location = the_geom
   ) %>%
-  select(
-    parcel_id,
-    tax_roll_year,
-    year_built,
-    property_use,
-    property_class,
-    number_of_units,
-    number_of_stories,
-    zoning_code,
-    tax_roll_neighborhood,
-    tax_roll_supervisor_district,
-    parcel_location
+  filter(
+    # Only keep only records with valid year_built values
+    !is.na(year_built),
+    year_built <= 2022
   ) %>%
-  distinct(parcel_id, .keep_all = TRUE)
-
+  group_by(parcel_id) %>%
+  arrange(desc(tax_roll_year), .by_group = TRUE) %>%
+  summarise(
+    # Keep the newest tax roll year available up to 2022
+    tax_roll_year = first(tax_roll_year),
+    
+    # Keep the oldest valid year built for this parcel
+    year_built = min(year_built),
+    
+    # Keep newest available parcel/building characteristics 
+    property_use = first(property_use),
+    property_class = first(property_class),
+    number_of_units = first(number_of_units),
+    number_of_stories = first(number_of_stories),
+    zoning_code = first(zoning_code),
+    tax_roll_neighborhood = first(tax_roll_neighborhood),
+    tax_roll_supervisor_district = first(tax_roll_supervisor_district),
+    parcel_location = first(parcel_location),
+    
+    .groups = "drop"
+  )
 
 ```
  
@@ -347,6 +532,7 @@ building_permits_tax <- building_permits_all %>%
     parcel_id = as.character(parcel_id)
   ) %>%
   left_join(tax_rolls_clean, by = "parcel_id")
+
 ```
 
 
@@ -354,7 +540,6 @@ building_permits_tax <- building_permits_all %>%
 ## Building Type via Building Audits
 
 Can use variable to examine how crowded a building may be. 
-
 
 ```{r audit_data}
 
@@ -400,6 +585,40 @@ building_audits_clean <- building_audits %>%
 
 ```
 
+```{r}
+# check audit data
+
+# ------------------------------------------------------------
+# Review cleaned building audit dataset
+# ------------------------------------------------------------
+
+# Check number of rows and columns
+dim(building_audits_clean)
+
+# Preview first few rows
+head(building_audits_clean)
+
+# Check variable names and types
+names(building_audits_clean)
+glimpse(building_audits_clean)
+
+# Summary of all variables
+summary(building_audits_clean)
+
+# ------------------------------------------------------------
+# Review categorical variables for 
+# ------------------------------------------------------------
+
+building_audits_clean %>%
+  count(audit_building_type, sort = TRUE)
+
+building_audits_clean %>%
+  count(audit_neighborhood, sort = TRUE)
+
+building_audits_clean %>%
+  count(audit_supervisor_district, sort = TRUE)
+
+```
  
 
 ```{r combine_all}
@@ -413,9 +632,9 @@ final_building_data <- building_permits_tax %>%
 
 ##  Census Tracts
 
-This section uses parcel coordinates from the tax roll data to assign each parcel to a census tract. We first match one row per parcel to a census tract, then join the tract information back to the full permit dataset.
-
 Now we will add geographic information to the final building dataset!
+
+This section uses parcel coordinates from the tax roll data to assign each parcel to a census tract. We first match one row per parcel to a census tract, then join the tract information back to the full permit dataset.
 
 We already have ZIP codes in the permit data. Some records also have ZIP codes from the building audit data. We will make one final ZIP code column using the permit ZIP code first. If that is missing, we will use the audit ZIP code.
 
@@ -525,7 +744,7 @@ What year is the cut off?
 final_building_data <- final_building_data %>%
   mutate(
     filed_year = year(filed_date),
-    building_age = 2026 - year_built,
+    building_age = 2022 - year_built,
     
     newer_housing = if_else(
       year_built >= 2000, # what year are we considering new?
