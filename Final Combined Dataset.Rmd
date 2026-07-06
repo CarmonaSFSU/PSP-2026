@@ -23,8 +23,8 @@ knitr::opts_chunk$set(echo = TRUE)
 if (!require("pacman")) {install.packages("pacman")}
 
 # load other packages, installing as needed
-pacman::p_load(tidyverse, lubridate, stringr, tigris, sf, leaflet, readr)
-
+pacman::p_load(tidyverse, lubridate, stringr, tigris, sf, leaflet, readr, viridis)
+ 
 ```
 
 
@@ -146,6 +146,185 @@ building_tract_year %>%
 
 ```
 
+### Cooling Upgrades Map 
+
+One tract had many repeated cooling permits concentrated in a few parcels! So the map uses categories so we can see the general pattern. 2015 had some outliers from normal ranges.. again something happened in 2015?
+
+```{r map_residential_cooling}
+
+# Map total residential cooling updates by census tract
+# with corrected GEOIDs and cropped SF map extent
+
+options(tigris_use_cache = TRUE)
+
+# Summarize total residential cooling updates by tract
+building_map_data <- building_tract_year %>%
+  mutate(
+    census_tract_geoid = str_pad(
+      as.character(census_tract_geoid),
+      width = 11,
+      side = "left",
+      pad = "0"
+    )
+  ) %>%
+  group_by(census_tract_geoid) %>%
+  summarise(
+    total_residential_cooling_updates = sum(cooling_air_updates, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Get San Francisco census tract boundaries from tigris
+sf_tracts <- tracts(
+  state = "CA",
+  county = "San Francisco",
+  year = 2020,
+  cb = TRUE
+) %>%
+  st_transform(4326) %>%
+  select(
+    census_tract_geoid = GEOID,
+    geometry
+  )
+
+# Join cooling data to tract boundaries
+building_map_sf <- sf_tracts %>%
+  left_join(building_map_data, by = "census_tract_geoid") %>%
+  mutate(
+    total_residential_cooling_updates = replace_na(
+      total_residential_cooling_updates,
+      0
+    ),
+    cooling_update_category = cut(
+      total_residential_cooling_updates,
+      breaks = c(-Inf, 0, 1, 2, 5, 10, 25, 50, Inf),
+      labels = c("0", "1", "2", "3–5", "6–10", "11–25", "26–50", "51+")
+    )
+  )
+
+# Crop map extent to mainland San Francisco
+sf_bbox <- st_bbox(
+  c(
+    xmin = -122.53,
+    xmax = -122.35,
+    ymin = 37.70,
+    ymax = 37.84
+  ),
+  crs = st_crs(building_map_sf)
+)
+
+building_map_sf_crop <- st_crop(building_map_sf, sf_bbox)
+
+# Map total residential cooling updates
+ggplot(building_map_sf_crop) +
+  geom_sf(
+    aes(fill = cooling_update_category),
+    color = "white",
+    linewidth = 0.1
+  ) +
+  scale_fill_viridis_d(
+    option = "plasma",
+    na.value = "grey90",
+    name = "Cooling\nupdates"
+  ) +
+  labs(
+    title = "Residential Cooling Updates by Census Tract",
+    subtitle = "Total residential cooling-related permits, 2013–2022"
+  ) +
+  coord_sf(
+    xlim = c(-122.53, -122.35),
+    ylim = c(37.70, 37.84),
+    datum = NA,
+    expand = FALSE
+  ) +
+  theme_void() +
+  theme(
+    plot.margin = margin(5, 5, 5, 5)
+  )
+
+```
+
+
+```{r}
+# Neighborhood-level map of residential cooling upgrades
+# Uses local shapefile folder: "Neighborhood Shapefile"
+ 
+
+#  Read SF neighborhood shapefile
+sf_neighborhoods <- st_read(
+  "Data/Neighborhood Shapefile/geo_export_c03b1232-1f9b-41f4-9f16-5fc136f98717.shp",
+  quiet = TRUE
+) %>%
+  st_transform(4326)
+
+#  Rename neighborhood column
+# If this line errors, run names(sf_neighborhoods) and replace nhood
+# with the actual neighborhood name column.
+sf_neighborhoods <- sf_neighborhoods %>%
+  rename(neighborhood = nhood) %>%
+  mutate(
+    neighborhood_clean = str_to_lower(neighborhood),
+    neighborhood_clean = str_squish(neighborhood_clean)
+  )
+
+#  Summarize residential cooling upgrades by neighborhood
+cooling_neighborhood_data <- building_year_clean %>%
+  filter(!is.na(neighborhood)) %>%
+  mutate(
+    neighborhood_clean = str_to_lower(neighborhood),
+    neighborhood_clean = str_squish(neighborhood_clean)
+  ) %>%
+  group_by(neighborhood_clean) %>%
+  summarise(
+    total_residential_permits = n(),
+    total_residential_cooling_updates = sum(cooling_air_update == 1, na.rm = TRUE),
+    percent_residential_cooling = if_else(
+      total_residential_permits > 0,
+      round(total_residential_cooling_updates / total_residential_permits * 100, 2),
+      NA_real_
+    ),
+    .groups = "drop"
+  )
+
+# Join data to neighborhood boundaries and create bins
+cooling_neighborhood_sf <- sf_neighborhoods %>%
+  left_join(
+    cooling_neighborhood_data,
+    by = "neighborhood_clean"
+  ) %>%
+  mutate(
+    total_residential_cooling_updates = replace_na(total_residential_cooling_updates, 0),
+    cooling_update_category = cut(
+      total_residential_cooling_updates,
+      breaks = c(-Inf, 0, 5, 10, 25, 50, 100, Inf),
+      labels = c("0", "1–5", "6–10", "11–25", "26–50", "51–100", "101+")
+    )
+  )
+
+# Map residential cooling upgrades by neighborhood
+ggplot(cooling_neighborhood_sf) +
+  geom_sf(
+    aes(fill = cooling_update_category),
+    color = "white",
+    linewidth = 0.25
+  ) +
+  scale_fill_viridis_d(
+    option = "plasma",
+    na.value = "grey90",
+    name = "Cooling\nupdates"
+  ) +
+  labs(
+    title = "Residential Cooling Updates by Neighborhood",
+    subtitle = "Total residential cooling-related permits, 2013–2022"
+  ) +
+  coord_sf(datum = NA, expand = FALSE) +
+  theme_void() +
+  theme(
+    plot.margin = margin(5, 5, 5, 5)
+  )
+```
+
+
+
 ## Heat Data 
 
 This code uses final heat data that was created using "Downloading_Daymet_Data.Rmd".
@@ -191,6 +370,65 @@ heat_tract_year %>%
   head()
 
 ```
+
+
+### Heatwaves Map 
+
+
+```{r}
+# Map mean annual 2-day heatwave events by census tract
+# Uses existing sf_tracts and sf_bbox from the cooling map code
+
+heat_map_data <- heat_tract_year %>%
+  mutate(
+    census_tract_geoid = stringr::str_pad(
+      as.character(census_tract_geoid),
+      width = 11,
+      side = "left",
+      pad = "0"
+    )
+  ) %>%
+  group_by(census_tract_geoid) %>%
+  summarise(
+    mean_heatwave_events_2day = mean(heatwave_events_2day, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+heat_map_sf <- sf_tracts %>%
+  left_join(
+    heat_map_data,
+    by = "census_tract_geoid"
+  )
+
+heat_map_sf_crop <- st_crop(heat_map_sf, sf_bbox)
+
+ggplot(heat_map_sf_crop) +
+  geom_sf(
+    aes(fill = mean_heatwave_events_2day),
+    color = "white",
+    linewidth = 0.1
+  ) +
+  scale_fill_viridis_c(
+    option = "inferno",
+    na.value = "grey90",
+    name = "Mean annual\nheatwave events"
+  ) +
+  labs(
+    title = "Heatwave Events by Census Tract",
+    subtitle = "Average annual 2-day heatwave events, 2013–2022"
+  ) +
+  coord_sf(
+    xlim = c(-122.53, -122.35),
+    ylim = c(37.70, 37.84),
+    datum = NA,
+    expand = FALSE
+  ) +
+  theme_void() +
+  theme(
+    plot.margin = margin(5, 5, 5, 5)
+  )
+```
+
 
 ## SVI Data 
 
@@ -333,6 +571,162 @@ tree_tract_year %>%
   )
 
 ```
+
+### Tree Map
+
+Tree planting counts were highly skewed! So we mapped categories instead of a continuous scale to keep one high-count tract from not showing patterns across city. But scale can be misleading?
+
+```{r}
+tree_map_sf <- tree_map_sf %>%
+  mutate(
+    tree_category = cut(
+      total_trees_planted,
+      breaks = c(-Inf, 0, 10, 25, 50, 100, 200, Inf),
+      labels = c("0", "1–10", "11–25", "26–50", "51–100", "101–200", "201+")
+    )
+  )
+
+tree_map_sf_crop <- st_crop(tree_map_sf, sf_bbox)
+
+ggplot(tree_map_sf_crop) +
+  geom_sf(
+    aes(fill = tree_category),
+    color = "white",
+    linewidth = 0.1
+  ) +
+  scale_fill_viridis_d(
+    option = "viridis",
+    na.value = "grey90",
+    name = "Trees\nplanted"
+  ) +
+  labs(
+    title = "Trees Planted by Census Tract",
+    subtitle = "Total trees planted, 2013–2022"
+  ) +
+  coord_sf(
+    xlim = c(-122.53, -122.35),
+    ylim = c(37.70, 37.84),
+    datum = NA,
+    expand = FALSE
+  ) +
+  theme_void() +
+  theme(
+    plot.margin = margin(5, 5, 5, 5)
+  )
+```
+
+```{r}
+# Neighborhood-level map of trees planted
+# Uses local neighborhood shapefile and tree_tract_year
+ 
+
+options(tigris_use_cache = TRUE)
+
+#  Read SF neighborhood shapefile
+sf_neighborhoods <- st_read(
+  "Data/Neighborhood Shapefile/geo_export_c03b1232-1f9b-41f4-9f16-5fc136f98717.shp",
+  quiet = TRUE
+) %>%
+  st_transform(4326)
+
+#  Rename neighborhood column
+# If this errors, run names(sf_neighborhoods) and replace nhood
+sf_neighborhoods <- sf_neighborhoods %>%
+  rename(neighborhood = nhood) %>%
+  mutate(
+    neighborhood_clean = str_to_lower(neighborhood),
+    neighborhood_clean = str_squish(neighborhood_clean)
+  )
+
+# Get SF census tract boundaries
+sf_tracts <- tracts(
+  state = "CA",
+  county = "San Francisco",
+  year = 2020,
+  cb = TRUE
+) %>%
+  st_transform(4326) %>%
+  select(
+    census_tract_geoid = GEOID,
+    geometry
+  )
+
+#  Create tract-to-neighborhood crosswalk
+# Uses tract representative points to assign each tract to one neighborhood
+tract_neighborhood_crosswalk <- sf_tracts %>%
+  st_point_on_surface() %>%
+  st_join(
+    sf_neighborhoods %>%
+      select(neighborhood_clean, neighborhood),
+    join = st_within
+  ) %>%
+  st_drop_geometry() %>%
+  select(census_tract_geoid, neighborhood_clean, neighborhood)
+
+# Summarize trees by tract, then attach neighborhoods
+tree_neighborhood_data <- tree_tract_year %>%
+  mutate(
+    census_tract_geoid = str_pad(
+      as.character(census_tract_geoid),
+      width = 11,
+      side = "left",
+      pad = "0"
+    )
+  ) %>%
+  group_by(census_tract_geoid) %>%
+  summarise(
+    total_trees_planted = sum(trees_planted, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  left_join(
+    tract_neighborhood_crosswalk,
+    by = "census_tract_geoid"
+  ) %>%
+  filter(!is.na(neighborhood_clean)) %>%
+  group_by(neighborhood_clean) %>%
+  summarise(
+    total_trees_planted = sum(total_trees_planted, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Join tree counts to neighborhood boundaries and create bins
+tree_neighborhood_sf <- sf_neighborhoods %>%
+  left_join(
+    tree_neighborhood_data,
+    by = "neighborhood_clean"
+  ) %>%
+  mutate(
+    total_trees_planted = replace_na(total_trees_planted, 0),
+    tree_category = cut(
+      total_trees_planted,
+      breaks = c(-Inf, 0, 25, 50, 100, 200, 400, Inf),
+      labels = c("0", "1–25", "26–50", "51–100", "101–200", "201–400", "401+")
+    )
+  )
+
+# Map trees planted by neighborhood
+ggplot(tree_neighborhood_sf) +
+  geom_sf(
+    aes(fill = tree_category),
+    color = "white",
+    linewidth = 0.25
+  ) +
+  scale_fill_viridis_d(
+    option = "viridis",
+    na.value = "grey90",
+    name = "Trees\nplanted"
+  ) +
+  labs(
+    title = "Trees Planted by Neighborhood",
+    subtitle = "Total trees planted, 2013–2022"
+  ) +
+  coord_sf(datum = NA, expand = FALSE) +
+  theme_void() +
+  theme(
+    plot.margin = margin(5, 5, 5, 5)
+  )
+```
+
 
 ## Creating Final Dataset
  
