@@ -1,0 +1,863 @@
+---
+title: "Heat, Redlining, Cooling Updates, and Greening Analysis"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+#-----setup options-----
+
+# clear the workspace
+rm(list = ls())
+
+# knitr options, shows the code in the knitted HTML file 
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+```{r load_libraries, echo=FALSE, include=FALSE, eval=TRUE}
+#-----load libraries pacman-----
+
+# load pacman, installing if needed
+if (!require("pacman")) {install.packages("pacman")}
+
+# load other packages, installing as needed
+pacman::p_load(tidyverse, broom)
+
+```
+
+
+# Introduction
+
+This analysis uses three cleaned datasets which can be found in the Box Data folders.
+
+1. `tract_year_full.csv`: census tract-year dataset  
+2. `zip_year_full.csv`: ZIP code-year dataset  
+3. `neighborhood_year_full.csv`: neighborhood-year dataset  
+
+
+This project examines how housing age, historical redlining, greenness, and cooling-related building updates relate to heatwave exposure in San Francisco census tracts.
+
+Aim 1: Examine whether housing age and newer development patterns are associated with heatwave exposure, tree planting, and cooling-related permits.
+
+Aim 2: Describe temporal trends in heatwave exposure and greening activity from 2013 to 2022.
+
+Aim 3: Assess whether historical redlining grade is associated with heatwave exposure, tree planting, and cooling-related permits.
+
+```{r load_data}
+# Read the cleaned analysis datasets from the Data folder.
+# These files were created in the previous data cleaning script.
+
+tract_year_full <- read_csv("Data/tract_year_full.csv")
+zip_year_full <- read_csv("Data/zip_year_full.csv")
+neighborhood_year_full <- read_csv("Data/neighborhood_year_full.csv")
+```
+
+```{r check_loaded_data}
+# Check that the files loaded correctly.
+# glimpse() is useful because it shows column names, data types, and example values.
+
+glimpse(tract_year_full)
+glimpse(zip_year_full)
+glimpse(neighborhood_year_full)
+```
+
+Some data wrangling was done to change missing values are changed to 0. For example, if a tract-year has no recorded tree planting, we treat that as 0 trees planted.
+
+```{r prepare_analysis_data}
+
+# Clean census tract-year dataset for analysis.
+# Remove 2012 because heat exposure data are not available for that year.
+# Replace missing event counts with 0.
+# Keep heat values as NA if any are still missing after removing 2012.
+
+tract_year_analysis <- tract_year_full %>%
+  filter(year != 2012) %>%
+  mutate(
+    total_permits = replace_na(total_permits, 0),
+    cooling_air_updates = replace_na(cooling_air_updates, 0),
+    trees_planted = replace_na(trees_planted, 0),
+    any_cooling_air_update = cooling_air_updates > 0
+  )
+
+# Clean ZIP code-year dataset for analysis.
+
+zip_year_analysis <- zip_year_full %>%
+  filter(year != 2012) %>%
+  mutate(
+    total_permits = replace_na(total_permits, 0),
+    cooling_air_updates = replace_na(cooling_air_updates, 0),
+    trees_planted = replace_na(trees_planted, 0),
+    any_cooling_air_update = cooling_air_updates > 0
+  )
+
+# Clean neighborhood-year dataset for analysis.
+
+neighborhood_year_analysis <- neighborhood_year_full %>%
+  filter(year != 2012) %>%
+  mutate(
+    total_permits = replace_na(total_permits, 0),
+    cooling_air_updates = replace_na(cooling_air_updates, 0),
+    trees_planted = replace_na(trees_planted, 0),
+    any_cooling_air_update = cooling_air_updates > 0
+  )
+ 
+
+# check data
+glimpse(tract_year_analysis)
+glimpse(zip_year_analysis)
+glimpse(neighborhood_year_analysis)
+
+
+```
+
+# Exploratory Data Checks
+
+These checks help us understand the size and structure of the datasets before doing analysis.
+
+```{r check_dataset_size}
+# Check number of rows, geographies, and years.
+
+tract_year_analysis %>%
+  summarise(
+    dataset = "Census tract-year",
+    rows = n(),
+    geographies = n_distinct(census_tract_geoid),
+    min_year = min(year, na.rm = TRUE),
+    max_year = max(year, na.rm = TRUE)
+  )
+
+zip_year_analysis %>%
+  summarise(
+    dataset = "ZIP code-year",
+    rows = n(),
+    geographies = n_distinct(zipcode),
+    min_year = min(year, na.rm = TRUE),
+    max_year = max(year, na.rm = TRUE)
+  )
+
+neighborhood_year_analysis %>%
+  summarise(
+    dataset = "Neighborhood-year",
+    rows = n(),
+    geographies = n_distinct(neighborhood),
+    min_year = min(year, na.rm = TRUE),
+    max_year = max(year, na.rm = TRUE)
+  )
+```
+
+```{r check_missingness}
+# Check missingness in key variables.
+# This helps identify variables that may need caution in analysis.
+
+tract_year_analysis %>%
+  summarise(
+    rows = n(),
+    missing_svi = sum(is.na(svi_overall)),
+    missing_redlining_grade = sum(is.na(dominant_redlining_grade)),
+    missing_building_age = sum(is.na(median_building_age)),
+    missing_year_built = sum(is.na(median_year_built))
+  )
+```
+
+
+## Overall Summary of Data
+
+If this were a "Table 1" what would you want to show? Think about what the table is supposed to describe! 
+A Table 1 helps the reader understand the study sample and compare important characteristics across groups. In this analysis, we can create tables by redlining grade, SVI quartile, and heat exposure quartile. For each table, consider which variables should be included, whether each variable should be summarized using a mean/standard deviation or median/interquartile range, and how missing values should be handled.  
+
+
+```{r overall_summary}
+# Overall summary across all census tract-years.
+
+overall_summary <- tract_year_analysis %>%
+  summarise(
+    tract_years = n(),
+    census_tracts = n_distinct(census_tract_geoid),
+    total_permits = sum(total_permits, na.rm = TRUE),
+    total_cooling_air_updates = sum(cooling_air_updates, na.rm = TRUE),
+    percent_cooling_air = round(total_cooling_air_updates / total_permits * 100, 2),
+    average_heat_days_95 = mean(heat_days_95, na.rm = TRUE),
+    average_heatwave_events_2day = mean(heatwave_events_2day, na.rm = TRUE),
+    total_trees_planted = sum(trees_planted, na.rm = TRUE),
+    average_svi = mean(svi_overall, na.rm = TRUE),
+    median_building_age = median(median_building_age, na.rm = TRUE)
+  )
+
+overall_summary
+
+```
+
+## Yearly Trends
+
+```{r yearly_summary}
+# Summarize key variables by year.
+
+yearly_summary <- tract_year_analysis %>%
+  group_by(year) %>%
+  summarise(
+    total_permits = sum(total_permits, na.rm = TRUE),
+    cooling_air_updates = sum(cooling_air_updates, na.rm = TRUE),
+    percent_cooling_air = round(cooling_air_updates / total_permits * 100, 2),
+    average_heat_days_95 = mean(heat_days_95, na.rm = TRUE),
+    average_heatwave_events_2day = mean(heatwave_events_2day, na.rm = TRUE),
+    total_trees_planted = sum(trees_planted, na.rm = TRUE),
+    average_svi = mean(svi_overall, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+yearly_summary
+```
+
+```{r plot_cooling_over_time}
+# Plot cooling-air updates over time.
+
+ggplot(yearly_summary, aes(x = year, y = cooling_air_updates)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Cooling-Air Updates Over Time",
+    x = "Year",
+    y = "Number of cooling-air updates"
+  ) +
+  scale_x_continuous(
+  breaks = 2012:2022,
+  minor_breaks = NULL) + 
+  theme_minimal()
+```
+
+```{r plot_heat_over_time}
+# Plot average 2 day heatwave events over time.
+
+ggplot(yearly_summary, aes(x = year, y = average_heatwave_events_2day)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Average Heatwave Events Over Time",
+    x = "Year",
+    y = "Average 2 day heatwave events"
+  ) +
+    scale_x_continuous(
+  breaks = 2013:2022,
+  minor_breaks = NULL) + 
+  theme_minimal()
+```
+
+```{r plot_trees_over_time}
+# Plot trees planted over time.
+
+ggplot(yearly_summary, aes(x = year, y = total_trees_planted)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Trees Planted Over Time",
+    x = "Year",
+    y = "Trees planted"
+  ) +
+    scale_x_continuous(
+  breaks = 2013:2022,
+  minor_breaks = NULL) + 
+  theme_minimal()
+```
+
+## Analysis by Aim 
+
+### Aim 1: Housing age, redevelopment, and heat exposure
+
+Question: Do newer/redeveloped housing areas differ from older housing areas in heatwave exposure, tree planting, and cooling-related permits?
+
+Main variables:
+- Housing age (in relation to 2022) / redevelopment: median_year_built
+- Heat exposure: heatwave_events_2day
+- Greening activity: trees_planted
+- Cooling adaptation: cooling_air_updates, percent_cooling_air, any_cooling_air_update
+
+We are using 2000 as the cutoff for "newer housing." You may change this for your analysis! 
+
+```{r building_age_variable}
+
+#  Create "building era" variable
+
+tract_year_analysis <- tract_year_analysis %>%
+  mutate(
+    building_era_binary = case_when(
+      median_year_built < 2000 ~ "Older housing",
+      median_year_built >= 2000 ~ "Newer housing",
+      TRUE ~ NA_character_
+    ),
+    building_era_binary = factor(
+      building_era_binary,
+      levels = c(
+        "Older housing",
+        "Newer housing"
+      )
+    )
+  )
+
+```
+
+
+```{r aim1_table}
+
+# compare older housing areas with newer housing areas on heatwave exposure, tree planting, and cooling-related permits.
+
+aim1_descriptive <- tract_year_analysis %>%
+  group_by(building_era_binary) %>%
+  summarise(
+    tract_years = n(),
+    census_tracts = n_distinct(census_tract_geoid),
+    
+    median_year_built = median(median_year_built, na.rm = TRUE),
+    median_building_age = median(median_building_age, na.rm = TRUE),
+    
+    median_heatwave_events_2day = median(heatwave_events_2day, na.rm = TRUE),
+    mean_heatwave_events_2day = mean(heatwave_events_2day, na.rm = TRUE),
+    
+    median_trees_planted = median(trees_planted, na.rm = TRUE),
+    mean_trees_planted = mean(trees_planted, na.rm = TRUE),
+    
+    median_cooling_air_updates = median(cooling_air_updates, na.rm = TRUE),
+    mean_cooling_air_updates = mean(cooling_air_updates, na.rm = TRUE),
+    
+    median_percent_cooling_air = median(percent_cooling_air, na.rm = TRUE),
+    mean_percent_cooling_air = mean(percent_cooling_air, na.rm = TRUE),
+    
+    percent_with_any_cooling_update =
+      mean(any_cooling_air_update, na.rm = TRUE) * 100,
+    
+    median_svi_overall = median(svi_overall, na.rm = TRUE),
+    
+    .groups = "drop"
+  )
+
+aim1_descriptive
+
+```
+
+
+```{r aim1_plots}
+
+#  Descriptive plots
+
+# Boxplots show the median and spread of the data.
+# Note: Need to remove all the NAs!
+
+ggplot(
+  tract_year_analysis,
+  aes(x = building_era_binary, y = heatwave_events_2day)
+) +
+  geom_boxplot() +
+  labs(
+    title = "2-Day Heatwave Events by Building Era",
+    x = "Building era",
+    y = "2-day heatwave events"
+  ) +
+  theme_minimal()
+
+ggplot(
+  tract_year_analysis,
+  aes(x = building_era_binary, y = trees_planted)
+) +
+  geom_boxplot() +
+  labs(
+    title = "Trees Planted by Building Era",
+    x = "Building era",
+    y = "Trees planted"
+  ) +
+  theme_minimal()
+
+ggplot(
+  tract_year_analysis,
+  aes(x = building_era_binary, y = cooling_air_updates)
+) +
+  geom_boxplot() +
+  labs(
+    title = "Cooling/Air Updates by Building Era",
+    x = "Building era",
+    y = "Cooling/air updates"
+  ) +
+  theme_minimal()
+```
+
+In the unadjusted model, building era was not significantly associated with 2-day heatwave events.
+
+```{r aim1_unadjusted}
+# Inferential statistics: unadjusted model
+#  model tests whether heatwave exposure differs by building era.
+
+# Outcome: heatwave_events_2day
+# Predictor: building_era_binary
+
+aim1_heat_model_unadjusted <- lm(
+  heatwave_events_2day ~ building_era_binary,
+  data = tract_year_analysis
+)
+
+summary(aim1_heat_model_unadjusted)
+```
+
+#### Linear Heatwaves 
+ 
+This adjusted linear regression model examined whether building era was associated with 2-day heatwave events after accounting for trees planted, cooling/air updates, and SVI.
+
+* Older housing areas were the reference group.
+* Newer housing areas had about 0.24 more 2-day heatwave events than older housing areas, but this difference was not statistically significant.
+* Trees planted was significantly associated with 2-day heatwave events.
+* Each additional tree planted was associated with about 0.07 more 2-day heatwave events.
+* Cooling/air updates were not significantly associated with heatwave events.
+* SVI was not significantly associated with heatwave events.
+* The overall model was statistically significant, p < 0.001, but the R-squared was low, meaning the model explained only a small amount of variation in heatwave exposure.
+
+Overall, building era was not meaningfully associated with 2-day heatwave events after adjustment. The strongest predictor in this model was trees planted, but this should be interpreted as an association, not causation, because tree planting may have been targeted toward hotter areas.
+
+
+```{r aim1_adjusted}
+
+# Inferential statistics: adjusted model
+# model tests whether building era is associated with heatwave exposure after accounting for selected tract characteristics.
+
+# Outcome: heatwave_events_2day
+# Predictors: building_era_binary, trees_planted, cooling_air_updates, svi_overall
+ 
+aim1_heat_model_adjusted <- lm(
+  heatwave_events_2day ~
+    building_era_binary +
+    trees_planted +
+    cooling_air_updates +
+    svi_overall,
+  data = tract_year_analysis
+)
+
+summary(aim1_heat_model_adjusted)
+
+```
+
+#### Linear Heatwaves with Continuous Building Age
+
+This adjusted linear regression model examined whether median building age was associated with 2-day heatwave events after accounting for trees planted, cooling/air updates, and SVI.
+
+Median building age was not significantly associated with 2-day heatwave events.
+Each additional year of median building age was associated with only 0.002 more 2-day heatwave events, which is very close to zero.
+Trees planted was significantly associated with heatwave events.
+Each additional tree planted was associated with about 0.07 more 2-day heatwave events.
+Cooling/air updates were not significantly associated with heatwave events.
+SVI was not significantly associated with heatwave events.
+The overall model was statistically significant, p < 0.001, but the R-squared was low, meaning the model explained only a small amount of variation in heatwave exposure.
+
+```{r aim1_cont}
+
+# Inferential statistics: adjusted model
+# model tests whether building era is associated with heatwave exposure after accounting for selected tract characteristics.
+
+# Outcome: heatwave_events_2day
+# Predictors: median_building_age, trees_planted, cooling_air_updates, svi_overall
+aim1_heat_model_age_continuous <- lm(
+  heatwave_events_2day ~ median_building_age + trees_planted + cooling_air_updates + svi_overall,
+  data = tract_year_analysis
+)
+
+summary(aim1_heat_model_age_continuous)
+
+```
+
+
+
+### Aim 2: Greening and heatwave trends over time
+
+Question: How did tree planting and heatwave exposure change from 2013 to 2022?
+
+
+```{r aim2_table}
+# Descriptive statistics by year
+# annual trends in heatwave exposure and tree planting.
+# They do not test whether the trends are statistically significant.
+
+aim2_yearly_summary <- tract_year_analysis %>%
+  group_by(year) %>%
+  summarise(
+    tract_years = n(),
+    census_tracts = n_distinct(census_tract_geoid),
+    
+    total_trees_planted = sum(trees_planted, na.rm = TRUE),
+    median_trees_planted = median(trees_planted, na.rm = TRUE),
+    mean_trees_planted = mean(trees_planted, na.rm = TRUE),
+    
+    median_heatwave_events_2day = median(heatwave_events_2day, na.rm = TRUE),
+    mean_heatwave_events_2day = mean(heatwave_events_2day, na.rm = TRUE),
+    
+    .groups = "drop"
+  )
+
+aim2_yearly_summary
+
+```
+
+#### Tree Planting Trends
+
+```{r aim2_plots}
+
+# Descriptive plot: tree planting over time
+# plot shows whether total tree planting increased, decreased or fluctuated across years.
+
+ggplot(
+  aim2_yearly_summary,
+  aes(x = year, y = total_trees_planted)
+) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Tree Planting Over Time",
+    x = "Year",
+    y = "Total trees planted"
+  ) +
+    scale_x_continuous(
+  breaks = 2012:2022,
+  minor_breaks = NULL) + 
+  theme_minimal()
+
+
+# plot shows whether average 2-day heatwave events changed over time.
+
+ggplot(
+  aim2_yearly_summary,
+  aes(x = year, y = mean_heatwave_events_2day)
+) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Average 2-Day Heatwave Events Over Time",
+    x = "Year",
+    y = "Average 2-day heatwave events"
+  ) +
+    scale_x_continuous(
+  breaks = 2012:2022,
+  minor_breaks = NULL) + 
+  theme_minimal()
+
+
+
+```
+
+
+####  Linear Trees 
+
+This linear regression model examined whether tree planting changed over time from 2013 to 2022.
+
+* Year was significantly associated with trees planted, p < 0.001.
+* The coefficient for year was -0.40.
+* This means that, on average, each additional year was associated with about 0.40 fewer trees planted per census tract-year.
+* The negative coefficient suggests that tree planting decreased over time.
+* The overall model was statistically significant, but the R-squared was low, meaning year explained only a small amount of variation in tree planting.
+
+Overall, tree planting showed a statistically significant downward trend over time, but year alone explained only a small portion of differences in tree planting across tract-years.
+
+
+```{r}
+
+# Inferential statistics: trend in tree planting
+ #  model tests whether tree planting changed over time.
+
+# Outcome: trees_planted
+# Predictor: year
+
+# Interpretation:
+# The year coefficient tells us the average change in trees planted for each 1-year increase.
+
+aim2_tree_trend_model <- lm(
+  trees_planted ~ year,
+  data = tract_year_analysis
+)
+
+summary(aim2_tree_trend_model)
+
+
+```
+
+ 
+
+### Aim 3: Historical redlining, heatwaves, greening, and cooling adaptation
+
+Question: Do historically redlined areas differ in heatwave exposure, tree planting, and cooling-related permits?
+
+ Main variables:
+  Historical redlining: dominant_redlining_grade
+ Heat exposure: heatwave_events_2day
+ Greening activity: trees_planted
+ Cooling adaptation: cooling_air_updates, percent_cooling_air, any_cooling_air_update
+  Other tract characteristics: svi_overall, median_building_age
+
+
+```{r}
+
+# Need to assign HOLC grade!
+
+#  Aim 3 analysis dataset
+ 
+# We remove tract-years missing redlining grade because this aim compares redlining grades A, B, C, and D.
+# Grade A is the reference group in the regression models.
+
+aim3_data <- tract_year_analysis %>%
+  filter(!is.na(dominant_redlining_grade)) %>%
+  mutate(
+    dominant_redlining_grade = factor(
+      dominant_redlining_grade,
+      levels = c("A", "B", "C", "D")
+    )
+  )
+```
+
+```{r}
+
+#  Descriptive statistics by redlining grade
+ 
+#   summaries describe patterns across redlining grades.
+ 
+aim3_descriptive <- aim3_data %>%
+  group_by(dominant_redlining_grade) %>%
+  summarise(
+    tract_years = n(),
+    census_tracts = n_distinct(census_tract_geoid),
+    
+    median_heatwave_events_2day = median(heatwave_events_2day, na.rm = TRUE),
+    mean_heatwave_events_2day = mean(heatwave_events_2day, na.rm = TRUE),
+    
+    median_trees_planted = median(trees_planted, na.rm = TRUE),
+    mean_trees_planted = mean(trees_planted, na.rm = TRUE),
+    
+    median_cooling_air_updates = median(cooling_air_updates, na.rm = TRUE),
+    mean_cooling_air_updates = mean(cooling_air_updates, na.rm = TRUE),
+    
+    median_percent_cooling_air = median(percent_cooling_air, na.rm = TRUE),
+    mean_percent_cooling_air = mean(percent_cooling_air, na.rm = TRUE),
+    
+    percent_with_any_cooling_update =
+      mean(any_cooling_air_update, na.rm = TRUE) * 100,
+    
+    median_svi_overall = median(svi_overall, na.rm = TRUE),
+    median_building_age = median(median_building_age, na.rm = TRUE),
+    
+    .groups = "drop"
+  )
+
+aim3_descriptive
+
+
+```
+
+
+```{r}
+ 
+#  Descriptive plot: heatwave exposure by redlining grade
+
+#  plot compares 2-day heatwave events across HOLC grades.
+
+ggplot(
+  aim3_data,
+  aes(x = dominant_redlining_grade, y = heatwave_events_2day)
+) +
+  geom_boxplot() +
+  labs(
+    title = "2-Day Heatwave Events by Historical Redlining Grade",
+    x = "Dominant redlining grade",
+    y = "2-day heatwave events"
+  ) +
+  theme_minimal()
+
+
+```
+
+
+
+```{r}
+ 
+# Descriptive plot: tree planting by redlining grade
+#   plot compares tree planting across HOLC grades.
+
+ggplot(
+  aim3_data,
+  aes(x = dominant_redlining_grade, y = trees_planted)
+) +
+  geom_boxplot() +
+  labs(
+    title = "Trees Planted by Historical Redlining Grade",
+    x = "Dominant redlining grade",
+    y = "Trees planted"
+  ) +
+  theme_minimal()
+
+
+
+```
+
+
+
+```{r}
+
+ #  Descriptive plot: cooling/air updates by redlining grade
+ 
+#  plot compares cooling-related permit activity across HOLC grades.
+
+ggplot(
+  aim3_data,
+  aes(x = dominant_redlining_grade, y = cooling_air_updates)
+) +
+  geom_boxplot() +
+  labs(
+    title = "Cooling/Air Updates by Historical Redlining Grade",
+    x = "Dominant redlining grade",
+    y = "Cooling/air updates"
+  ) +
+  theme_minimal()
+
+```
+
+#### Linear Redlining
+
+The linear regression model examined 2-day heatwave events by redlining grade, SVI, median building age, and trees planted.
+
+* Grade A was the reference group.
+* Compared with grade A tracts, grades B, C, and D had slightly more 2-day heatwave events on average, but these differences were not statistically significant.
+* SVI was not significantly associated with 2-day heatwave events.
+* Median building age was not significantly associated with 2-day heatwave events.
+* Trees planted was significantly associated with more 2-day heatwave events.
+* Each additional tree planted was associated with about 0.09 more 2-day heatwave events.
+* The overall model was statistically significant, p < 0.001, but the R-squared was low, meaning the model explained only a small amount of variation in heatwave exposure.
+
+Overall, redlining grade was not significantly associated with 2-day heatwave events after accounting for SVI, median building age, and trees planted. Trees planted was the strongest predictor in this model. 
+
+
+```{r aim3_redlining}
+ 
+#  Inferential statistics: redlining and heatwave exposure
+ 
+# This model tests whether 2-day heatwave events differ by redlining grade after accounting for SVI, median building age, and trees planted.
+
+# Outcome: heatwave_events_2day
+
+# Predictors: dominant_redlining_grade, svi_overall, median_building_age, trees_planted
+ 
+# Grade A is the reference group. Coefficients for grades B, C, and D represent the average difference in 2-day heatwave events compared with grade A, holding the other variables constant.
+
+aim3_heat_model <- lm(
+  heatwave_events_2day ~
+    dominant_redlining_grade +
+    svi_overall +
+    median_building_age +
+    trees_planted,
+  data = aim3_data
+)
+
+summary(aim3_heat_model)
+```
+
+
+#### Linear Trees
+
+This linear regression model examined tree planting by redlining grade, heatwave exposure, SVI, and median building age.
+
+* Grade A was the reference group.
+* Compared with grade A tracts, grades B, C, and D had significantly fewer trees planted on average.
+* Grade B tracts had about 5.2 fewer trees planted than grade A tracts.
+* Grade C tracts had about 4.7 fewer trees planted than grade A tracts.
+* Grade D tracts had about 4.8 fewer trees planted than grade A tracts.
+* More 2-day heatwave events were significantly associated with more trees planted.
+* Higher SVI was also significantly associated with more trees planted.
+* Median building age was not statistically significant.
+* The overall model was statistically significant, p < 0.001, but the R-squared was low, meaning the model explained a small amount of variation in tree planting.
+
+Overall, tree planting was significantly lower in historically lower-graded areas compared with grade A areas, even after accounting for heatwave exposure, SVI, and median building age.
+
+
+```{r aim3_trees}
+ 
+#  Inferential statistics: redlining and tree planting
+ # This model tests whether tree planting differs by redlining grade
+# after accounting for heatwave exposure, SVI, and median building age.
+ 
+# Outcome: trees_planted
+
+# Predictors: dominant_redlining_grade, heatwave_events_2day, svi_overall, median_building_age
+
+aim3_tree_model <- lm(
+  trees_planted ~
+    dominant_redlining_grade +
+    heatwave_events_2day +
+    svi_overall +
+    median_building_age,
+  data = aim3_data
+)
+
+summary(aim3_tree_model)
+```
+
+#### Linear Cooling
+
+This linear regression model examined the number of cooling/air updates by redlining grade, heatwave exposure, SVI, and median building age.
+
+* Grade A was the reference group.
+* Compared with grade A tracts, grades B, C, and D had fewer cooling/air updates on average, but these differences were not statistically significant.
+* More 2-day heatwave events were associated with slightly more cooling/air updates, but this association was not statistically significant.
+* Higher SVI was significantly associated with more cooling/air updates.
+* Older median building age was also significantly associated with more cooling/air updates.
+* The overall model was statistically significant, p = 0.007, but the R-squared was low, meaning the model explained only a small amount of variation in cooling/air updates.
+
+Overall, redlining grade was not significantly associated with the number of cooling/air updates in this model. SVI and median building age were the strongest predictors among the variables included.
+
+
+```{r aim3_cooling_linear}
+ #  inferential statistics: redlining and cooling permits
+ # This model tests whether cooling/air updates differ by redlining grade after accounting for heatwave exposure, SVI, and median building age.
+ 
+# Outcome: cooling_air_updates
+ 
+# Predictors: dominant_redlining_grade, heatwave_events_2day, svi_overall, median_building_age
+
+aim3_cooling_model <- lm(
+  cooling_air_updates ~
+    dominant_redlining_grade +
+    heatwave_events_2day +
+    svi_overall +
+    median_building_age,
+  data = aim3_data
+)
+
+summary(aim3_cooling_model)
+```
+
+#### Logistic Cooling Outcome
+
+The logistic regression model examined whether census tract-years had any cooling/air update. Results are shown as odds ratios, which are calculated by exponentiating the logistic regression coefficients: OR = exp(coefficient). An odds ratio below 1 means lower odds compared with the reference group, while an odds ratio above 1 means higher odds.
+
+* Grade A was the reference group.
+* Compared with grade A tracts, grade B tracts had lower odds of any cooling/air update: OR = exp(-0.99) = 0.37.
+* Grade C tracts also had lower odds: OR = exp(-0.68) = 0.51.
+* Grade D tracts had lower odds: OR = exp(-0.82) = 0.44.
+* Higher SVI was associated with lower odds of cooling/air updates.
+* Older median building age was associated with slightly higher odds of cooling/air updates.
+* More 2-day heatwave events were associated with slightly lower odds of cooling/air updates.
+
+Overall, cooling-related permit activity was less common in historically lower-graded and more socially vulnerable areas.
+
+
+```{r aim3_cooling_odds}
+
+# inferential statistics: any cooling update
+ # This logistic regression tests whether the odds of having any cooling/air update differ by redlining grade.
+
+# Outcome: any_cooling_air_update
+
+# Predictors: dominant_redlining_grade, heatwave_events_2day, svi_overall, median_building_age
+ 
+
+aim3_any_cooling_model <- glm(
+  any_cooling_air_update ~
+    dominant_redlining_grade +
+    heatwave_events_2day +
+    svi_overall +
+    median_building_age,
+  data = aim3_data,
+  family = binomial
+)
+
+summary(aim3_any_cooling_model)
+```
