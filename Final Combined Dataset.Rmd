@@ -76,11 +76,28 @@ This code uses final building data that was created using "Building Data Code.Rm
 
 The file "final_building_data.csv" is also found in the Box Folder: PINC 2026 > Data > Building Permit Data Sets
 
+Note: Filter out building updates not related to peoples homes (e.g., commercial, industrial, government)
+
+Building permit records were restricted to single-family and multi-family residential properties to better capture cooling upgrades in places where people live, rather than commercial or institutional buildings.
+
+
+```{r residential_subset}
+
+# residential only permits 
+ final_building_residential <- final_building_data %>%
+   filter(property_use %in% c(
+     "Single Family Residential",
+     "Multi-Family Residential"
+   ))
+ 
+```
+
 ```{r data_wrangle_building}
+
 
 # Clean building permit data for yearly analysis
 
-building_year_clean <- final_building_data %>%
+building_year_clean <- final_building_residential %>%
   mutate(
     census_tract_geoid = as.character(round(census_tract_geoid, 0)),
     zipcode = as.character(zipcode),
@@ -90,7 +107,7 @@ building_year_clean <- final_building_data %>%
   ) %>%
   filter(
     !is.na(year),
-    year >= 2012,
+    year >= 2013, # changed min to 2013 
     year <= 2022
   )
 
@@ -279,7 +296,7 @@ tree_clean <- sf_tree %>%
   filter(
     !is.na(census_tract_geoid),
     !is.na(year),
-    year >= 2012,
+    year >= 2013,
     year <= 2022
   ) %>%
   select(
@@ -641,7 +658,7 @@ neighborhood_year_full %>%
 ```{r save_final_datasets}
 
 # Save final  datasets
-# Updated on 7/2 due to updated heat metrics (overlap issue before)
+# Updated on 7/6 due to updated residential building filter (commercial building issue before)
 write_csv(tract_year_full, "Data/tract_year_full.csv")
 write_csv(zip_year_full, "Data/zip_year_full.csv")
 write_csv(neighborhood_year_full, "Data/neighborhood_year_full.csv")
