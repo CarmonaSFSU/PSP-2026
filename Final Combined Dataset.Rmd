@@ -577,31 +577,77 @@ tree_tract_year %>%
 Tree planting counts were highly skewed! So we mapped categories instead of a continuous scale to keep one high-count tract from not showing patterns across city. But scale can be misleading?
 
 ```{r}
-tree_map_sf <- tree_map_sf %>%
+#use geography
+
+options(tigris_use_cache = TRUE)
+
+# Count total trees planted by census tract
+tree_tract_total <- sf_tree %>%
+    filter(Year != 2012) %>%
   mutate(
-    tree_category = cut(
-      total_trees_planted,
-      breaks = c(-Inf, 0, 10, 25, 50, 100, 200, Inf),
-      labels = c("0", "1–10", "11–25", "26–50", "51–100", "101–200", "201+")
+    GEOID = as.character(GEOID),
+    GEOID = stringr::str_pad(GEOID, width = 11, pad = "0")
+  ) %>%
+  group_by(GEOID) %>%
+  summarise(
+    total_trees_planted = n(),
+    .groups = "drop"
+  )
+
+# Get San Francisco census tract boundaries
+sf_tracts <- tracts(
+  state = "CA",
+  county = "San Francisco",
+  year = 2020,
+  cb = TRUE,
+  class = "sf"
+) %>%
+  mutate(GEOID = as.character(GEOID))
+
+# Join tree counts to census tract boundaries
+sf_tree_map <- sf_tracts %>%
+  left_join(tree_tract_total, by = "GEOID") %>%
+  mutate(
+    total_trees_planted = replace_na(total_trees_planted, 0),
+
+    # Bins for total trees planted
+    trees_bin = case_when(
+      total_trees_planted == 0 ~ "0",
+      total_trees_planted >= 1   & total_trees_planted <= 5   ~ "1–5",
+      total_trees_planted >= 6   & total_trees_planted <= 10  ~ "6–10",
+      total_trees_planted >= 11  & total_trees_planted <= 25  ~ "11–25",
+      total_trees_planted >= 26  & total_trees_planted <= 50  ~ "26–50",
+      total_trees_planted >= 51  & total_trees_planted <= 100 ~ "51–100",
+      total_trees_planted >= 101 & total_trees_planted <= 200 ~ "101–200",
+      total_trees_planted >= 201 ~ "201+"
+    ),
+    trees_bin = factor(
+      trees_bin,
+      levels = c("0", "1–5", "6–10", "11–25", "26–50", "51–100", "101–200", "201+")
     )
   )
 
-tree_map_sf_crop <- st_crop(tree_map_sf, sf_bbox)
+# Remove tiny offshore geometries/islands to trim the map
+sf_tree_map_main <- sf_tree_map %>%
+  mutate(area = as.numeric(st_area(.))) %>%
+  filter(area > quantile(area, 0.02, na.rm = TRUE))
 
-ggplot(tree_map_sf_crop) +
+# 5. Create tight bounding box
+sf_bbox <- st_bbox(sf_tree_map_main)
+
+# 6. Make final map
+sf_tree_bin_map <- ggplot(sf_tree_map) +
   geom_sf(
-    aes(fill = tree_category),
+    aes(fill = trees_bin),
     color = "white",
-    linewidth = 0.1
+    linewidth = 0.12
   ) +
   scale_fill_viridis_d(
-    option = "viridis",
-    na.value = "grey90",
-    name = "Trees\nplanted"
-  ) +
-  labs(
-    title = "Trees Planted by Census Tract",
-    subtitle = "Total trees planted, 2013–2022"
+    option = "plasma",
+    direction = -1,
+    name = "Trees\nplanted",
+    drop = FALSE,
+    na.value = "grey90"
   ) +
   coord_sf(
     xlim = c(-122.53, -122.35),
@@ -609,124 +655,35 @@ ggplot(tree_map_sf_crop) +
     datum = NA,
     expand = FALSE
   ) +
-  theme_void() +
-  theme(
-    plot.margin = margin(5, 5, 5, 5)
-  )
-```
-
-```{r}
-# Neighborhood-level map of trees planted
-# Uses local neighborhood shapefile and tree_tract_year
- 
-
-options(tigris_use_cache = TRUE)
-
-#  Read SF neighborhood shapefile
-sf_neighborhoods <- st_read(
-  "Data/Neighborhood Shapefile/geo_export_c03b1232-1f9b-41f4-9f16-5fc136f98717.shp",
-  quiet = TRUE
-) %>%
-  st_transform(4326)
-
-#  Rename neighborhood column
-# If this errors, run names(sf_neighborhoods) and replace nhood
-sf_neighborhoods <- sf_neighborhoods %>%
-  rename(neighborhood = nhood) %>%
-  mutate(
-    neighborhood_clean = str_to_lower(neighborhood),
-    neighborhood_clean = str_squish(neighborhood_clean)
-  )
-
-# Get SF census tract boundaries
-sf_tracts <- tracts(
-  state = "CA",
-  county = "San Francisco",
-  year = 2020,
-  cb = TRUE
-) %>%
-  st_transform(4326) %>%
-  select(
-    census_tract_geoid = GEOID,
-    geometry
-  )
-
-#  Create tract-to-neighborhood crosswalk
-# Uses tract representative points to assign each tract to one neighborhood
-tract_neighborhood_crosswalk <- sf_tracts %>%
-  st_point_on_surface() %>%
-  st_join(
-    sf_neighborhoods %>%
-      select(neighborhood_clean, neighborhood),
-    join = st_within
-  ) %>%
-  st_drop_geometry() %>%
-  select(census_tract_geoid, neighborhood_clean, neighborhood)
-
-# Summarize trees by tract, then attach neighborhoods
-tree_neighborhood_data <- tree_tract_year %>%
-  mutate(
-    census_tract_geoid = str_pad(
-      as.character(census_tract_geoid),
-      width = 11,
-      side = "left",
-      pad = "0"
-    )
-  ) %>%
-  group_by(census_tract_geoid) %>%
-  summarise(
-    total_trees_planted = sum(trees_planted, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  left_join(
-    tract_neighborhood_crosswalk,
-    by = "census_tract_geoid"
-  ) %>%
-  filter(!is.na(neighborhood_clean)) %>%
-  group_by(neighborhood_clean) %>%
-  summarise(
-    total_trees_planted = sum(total_trees_planted, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-# Join tree counts to neighborhood boundaries and create bins
-tree_neighborhood_sf <- sf_neighborhoods %>%
-  left_join(
-    tree_neighborhood_data,
-    by = "neighborhood_clean"
-  ) %>%
-  mutate(
-    total_trees_planted = replace_na(total_trees_planted, 0),
-    tree_category = cut(
-      total_trees_planted,
-      breaks = c(-Inf, 0, 25, 50, 100, 200, 400, Inf),
-      labels = c("0", "1–25", "26–50", "51–100", "101–200", "201–400", "401+")
-    )
-  )
-
-# Map trees planted by neighborhood
-ggplot(tree_neighborhood_sf) +
-  geom_sf(
-    aes(fill = tree_category),
-    color = "white",
-    linewidth = 0.25
-  ) +
-  scale_fill_viridis_d(
-    option = "viridis",
-    na.value = "grey90",
-    name = "Trees\nplanted"
-  ) +
   labs(
-    title = "Trees Planted by Neighborhood",
+    title = "Trees Planted by Census Tract",
     subtitle = "Total trees planted, 2013–2022"
   ) +
-  coord_sf(datum = NA, expand = FALSE) +
   theme_void() +
   theme(
-    plot.margin = margin(5, 5, 5, 5)
+    plot.title = element_text(size = 18),
+    plot.subtitle = element_text(size = 13),
+    plot.margin = margin(10, 10, 10, 10),
+    legend.position = "right",
+    legend.title = element_text(size = 13),
+    legend.text = element_text(size = 11)
   )
+
+# Print map
+sf_tree_bin_map
+
+
+# Save map!
+ggsave(
+  "sf_trees_by_census_tract_binned.png",
+  plot = sf_tree_bin_map,
+  width = 9,
+  height = 6,
+  dpi = 300
+)
 ```
 
+ 
 
 ## Creating Final Dataset
  
