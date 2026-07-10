@@ -2,6 +2,9 @@
 title: "Heat, Redlining, Cooling Updates, and Greening Analysis"
 date: "`r Sys.Date()`"
 output: html_document
+editor_options: 
+  markdown: 
+    wrap: 72
 ---
 
 ```{r setup, include=FALSE}
@@ -22,30 +25,34 @@ knitr::opts_chunk$set(echo = TRUE)
 if (!require("pacman")) {install.packages("pacman")}
 
 # load other packages, installing as needed
-pacman::p_load(tidyverse, broom, gt, gtsummary, viridis, patchwork)
+pacman::p_load(tidyverse, broom, gt, gtsummary, viridis, patchwork, corrplot, Hmisc)
 
 
 
 ```
 
-
-
 # Introduction
 
-This analysis uses three cleaned datasets which can be found in the Box Data folders.
+This analysis uses three cleaned datasets which can be found in the Box
+Data folders.
 
-1. `tract_year_full.csv`: census tract-year dataset  
-2. `zip_year_full.csv`: ZIP code-year dataset  
-3. `neighborhood_year_full.csv`: neighborhood-year dataset  
+1.  `tract_year_full.csv`: census tract-year dataset\
+2.  `zip_year_full.csv`: ZIP code-year dataset\
+3.  `neighborhood_year_full.csv`: neighborhood-year dataset
 
+This project examines how housing age, historical redlining, greenness,
+and cooling-related building updates relate to heatwave exposure in San
+Francisco census tracts.
 
-This project examines how housing age, historical redlining, greenness, and cooling-related building updates relate to heatwave exposure in San Francisco census tracts.
+Aim 1: Examine whether housing age and newer development patterns are
+associated with heatwave exposure, tree planting, and cooling-related
+permits.
 
-Aim 1: Examine whether housing age and newer development patterns are associated with heatwave exposure, tree planting, and cooling-related permits.
+Aim 2: Describe temporal trends in heatwave exposure and greening
+activity from 2013 to 2022.
 
-Aim 2: Describe temporal trends in heatwave exposure and greening activity from 2013 to 2022.
-
-Aim 3: Assess whether historical redlining grade is associated with heatwave exposure, tree planting, and cooling-related permits.
+Aim 3: Assess whether historical redlining grade is associated with
+heatwave exposure, tree planting, and cooling-related permits.
 
 ```{r load_data}
 # Read the cleaned analysis datasets from the Data folder.
@@ -65,7 +72,9 @@ glimpse(zip_year_full)
 glimpse(neighborhood_year_full)
 ```
 
-Some data wrangling was done to change missing values are changed to 0. For example, if a tract-year has no recorded tree planting, we treat that as 0 trees planted.
+Some data wrangling was done to change missing values are changed to 0.
+For example, if a tract-year has no recorded tree planting, we treat
+that as 0 trees planted.
 
 ```{r prepare_analysis_data}
 
@@ -116,7 +125,8 @@ glimpse(neighborhood_year_analysis)
 
 # Exploratory Data Checks
 
-These checks help us understand the size and structure of the datasets before doing analysis.
+These checks help us understand the size and structure of the datasets
+before doing analysis.
 
 ```{r check_dataset_size}
 # Check number of rows, geographies, and years.
@@ -163,12 +173,16 @@ tract_year_analysis %>%
   )
 ```
 
-
 ## Overall Summary of Data
 
-If this were a "Table 1" what would you want to show? Think about what the table is supposed to describe! 
-A Table 1 helps the reader understand the study sample and compare important characteristics across groups. In this analysis, we can create tables by redlining grade, SVI quartile, and heat exposure quartile. For each table, consider which variables should be included, whether each variable should be summarized using a mean/standard deviation or median/interquartile range, and how missing values should be handled.  
-
+If this were a "Table 1" what would you want to show? Think about what
+the table is supposed to describe! A Table 1 helps the reader understand
+the study sample and compare important characteristics across groups. In
+this analysis, we can create tables by redlining grade, SVI quartile,
+and heat exposure quartile. For each table, consider which variables
+should be included, whether each variable should be summarized using a
+mean/standard deviation or median/interquartile range, and how missing
+values should be handled.
 
 ```{r overall_summary}
 # Overall summary across all census tract-years.
@@ -262,21 +276,21 @@ ggplot(yearly_summary, aes(x = year, y = total_trees_planted)) +
   minor_breaks = NULL) + 
   theme_minimal()
 ```
- 
 
-## Analysis by Aim 
+## Analysis by Aim
 
 ### Aim 1: Housing age, redevelopment, and heat exposure
 
-Question: Do newer/redeveloped housing areas differ from older housing areas in heatwave exposure, tree planting, and cooling-related permits?
+Question: Do newer/redeveloped housing areas differ from older housing
+areas in heatwave exposure, tree planting, and cooling-related permits?
 
-Main variables:
-- Housing age (in relation to 2022) / redevelopment: median_year_built
-- Heat exposure: heatwave_events_2day
-- Greening activity: trees_planted
-- Cooling adaptation: cooling_air_updates, percent_cooling_air, any_cooling_air_update
+Main variables: - Housing age (in relation to 2022) / redevelopment:
+median_year_built - Heat exposure: heatwave_events_2day - Greening
+activity: trees_planted - Cooling adaptation: cooling_air_updates,
+percent_cooling_air, any_cooling_air_update
 
-We are using 2000 as the cutoff for "newer housing." You may change this for your analysis! 
+We are using 2000 as the cutoff for "newer housing." You may change this
+for your analysis!
 
 ```{r building_age_variable}
 
@@ -301,7 +315,6 @@ tract_year_analysis <- tract_year_analysis %>%
 
 
 ```
-
 
 ```{r aim1_table}
 
@@ -387,7 +400,6 @@ table1_building_era
  
 ```
 
-
 ```{r aim1_plots}
 
 #  Descriptive plots
@@ -432,14 +444,18 @@ ggplot(
   theme_minimal()
 ```
 
-This unadjusted model tested whether 2-day heatwave events differed between older housing areas and newer housing areas.
+This unadjusted model tested whether 2-day heatwave events differed
+between older housing areas and newer housing areas.
 
-* Older housing areas were the reference group.
-* Older housing areas had an average of about 7.04 2-day heatwave events.
-* Newer housing areas had about 2.19 more 2-day heatwave events than older housing areas.
-* This difference was statistically significant, p = 0.030.
+- Older housing areas were the reference group.
+- Older housing areas had an average of about 7.04 2-day heatwave
+  events.
+- Newer housing areas had about 2.19 more 2-day heatwave events than
+  older housing areas.
+- This difference was statistically significant, p = 0.030.
 
-However, the R-squared was very low, about 0.003, meaning building era explained less than 1% of the variation in heatwave events.
+However, the R-squared was very low, about 0.003, meaning building era
+explained less than 1% of the variation in heatwave events.
 
 ```{r aim1_unadjusted}
 # Inferential statistics: unadjusted model
@@ -457,21 +473,33 @@ summary(aim1_heat_model_unadjusted)
 
 ```
 
-#### Linear Heatwaves 
- 
-This adjusted linear regression model examined whether building era was associated with 2-day heatwave events after accounting for trees planted, cooling/air updates, and SVI.
+#### Linear Heatwaves
 
-* Older housing areas were the reference group.
-* Newer housing areas had about **1.73 more 2-day heatwave events** than older housing areas.
-* This difference was **not statistically significant at the 0.05 level**, but it was marginal, **p = 0.084**.
-* Trees planted was significantly associated with 2-day heatwave events.
-* Each additional tree planted was associated with about **0.08 more 2-day heatwave events**.
-* Cooling/air updates were not significantly associated with heatwave events.
-* SVI was not significantly associated with heatwave events.
-* The overall model was statistically significant, **p < 0.001**, but the R-squared was low, meaning the model explained only a small amount of variation in heatwave exposure.
+This adjusted linear regression model examined whether building era was
+associated with 2-day heatwave events after accounting for trees
+planted, cooling/air updates, and SVI.
 
-Overall, newer housing areas had somewhat higher 2-day heatwave exposure after adjustment, but the evidence was not strong enough to conclude a statistically significant difference. Trees planted was the strongest predictor in this model, but this should be interpreted as an association, not causation, because tree planting may have been targeted toward hotter areas.
+- Older housing areas were the reference group.
+- Newer housing areas had about **1.73 more 2-day heatwave events** than
+  older housing areas.
+- This difference was **not statistically significant at the 0.05
+  level**, but it was marginal, **p = 0.084**.
+- Trees planted was significantly associated with 2-day heatwave events.
+- Each additional tree planted was associated with about **0.08 more
+  2-day heatwave events**.
+- Cooling/air updates were not significantly associated with heatwave
+  events.
+- SVI was not significantly associated with heatwave events.
+- The overall model was statistically significant, **p \< 0.001**, but
+  the R-squared was low, meaning the model explained only a small amount
+  of variation in heatwave exposure.
 
+Overall, newer housing areas had somewhat higher 2-day heatwave exposure
+after adjustment, but the evidence was not strong enough to conclude a
+statistically significant difference. Trees planted was the strongest
+predictor in this model, but this should be interpreted as an
+association, not causation, because tree planting may have been targeted
+toward hotter areas.
 
 ```{r aim1_adjusted}
 
@@ -496,18 +524,30 @@ summary(aim1_heat_model_adjusted)
 
 #### Linear Heatwaves with Continuous Building Age
 
-This adjusted linear regression model examined whether **median building age** was associated with 2-day heatwave events after accounting for trees planted, cooling/air updates, and SVI.
+This adjusted linear regression model examined whether **median building
+age** was associated with 2-day heatwave events after accounting for
+trees planted, cooling/air updates, and SVI.
 
-* Median building age was not significantly associated with 2-day heatwave events.
-* Each additional year of median building age was associated with about **0.006 fewer 2-day heatwave events**, but this difference was not statistically significant.
-* Trees planted was significantly associated with 2-day heatwave events.
-* Each additional tree planted was associated with about **0.08 more 2-day heatwave events**.
-* Cooling/air updates were not significantly associated with heatwave events.
-* SVI was not significantly associated with heatwave events.
-* The overall model was statistically significant, **p < 0.001**, but the R-squared was low, meaning the model explained only a small amount of variation in heatwave exposure.
+- Median building age was not significantly associated with 2-day
+  heatwave events.
+- Each additional year of median building age was associated with about
+  **0.006 fewer 2-day heatwave events**, but this difference was not
+  statistically significant.
+- Trees planted was significantly associated with 2-day heatwave events.
+- Each additional tree planted was associated with about **0.08 more
+  2-day heatwave events**.
+- Cooling/air updates were not significantly associated with heatwave
+  events.
+- SVI was not significantly associated with heatwave events.
+- The overall model was statistically significant, **p \< 0.001**, but
+  the R-squared was low, meaning the model explained only a small amount
+  of variation in heatwave exposure.
 
-Overall, median building age was not meaningfully associated with 2-day heatwave events after adjustment. Trees planted was the strongest predictor in this model, but this should be interpreted as an association, not causation, because tree planting may have been targeted toward hotter areas.
-
+Overall, median building age was not meaningfully associated with 2-day
+heatwave events after adjustment. Trees planted was the strongest
+predictor in this model, but this should be interpreted as an
+association, not causation, because tree planting may have been targeted
+toward hotter areas.
 
 ```{r aim1_cont}
 
@@ -525,12 +565,10 @@ summary(aim1_heat_model_age_continuous)
 
 ```
 
-
-
 ### Aim 2: Greening and heatwave trends over time
 
-Question: How did tree planting and heatwave exposure change from 2013 to 2022?
-
+Question: How did tree planting and heatwave exposure change from 2013
+to 2022?
 
 ```{r aim2_table}
 # Descriptive statistics by year
@@ -603,19 +641,24 @@ ggplot(
 
 ```
 
+#### Linear Trees
 
-####  Linear Trees 
+This linear regression model examined whether tree planting changed over
+time from 2013 to 2022.
 
-This linear regression model examined whether tree planting changed over time from 2013 to 2022.
+- Year was significantly associated with trees planted, p \< 0.001.
+- The coefficient for year was -0.40.
+- This means that, on average, each additional year was associated with
+  about 0.40 fewer trees planted per census tract-year.
+- The negative coefficient suggests that tree planting decreased over
+  time.
+- The overall model was statistically significant, but the R-squared was
+  low, meaning year explained only a small amount of variation in tree
+  planting.
 
-* Year was significantly associated with trees planted, p < 0.001.
-* The coefficient for year was -0.40.
-* This means that, on average, each additional year was associated with about 0.40 fewer trees planted per census tract-year.
-* The negative coefficient suggests that tree planting decreased over time.
-* The overall model was statistically significant, but the R-squared was low, meaning year explained only a small amount of variation in tree planting.
-
-Overall, tree planting showed a statistically significant downward trend over time, but year alone explained only a small portion of differences in tree planting across tract-years.
-
+Overall, tree planting showed a statistically significant downward trend
+over time, but year alone explained only a small portion of differences
+in tree planting across tract-years.
 
 ```{r}
 
@@ -638,21 +681,19 @@ summary(aim2_tree_trend_model)
 
 ```
 
- 
-
 ### Aim 3: Historical redlining, heatwaves, greening, and cooling adaptation
 
-Question: Do historically redlined areas differ in heatwave exposure, tree planting, and cooling-related permits?
+Question: Do historically redlined areas differ in heatwave exposure,
+tree planting, and cooling-related permits?
 
- Main variables:
-  Historical redlining: dominant_redlining_grade
- Heat exposure: heatwave_events_2day
- Greening activity: trees_planted
- Cooling adaptation: cooling_air_updates, percent_cooling_air, any_cooling_air_update
-  Other tract characteristics: svi_overall, median_building_age
+Main variables: Historical redlining: dominant_redlining_grade Heat
+exposure: heatwave_events_2day Greening activity: trees_planted Cooling
+adaptation: cooling_air_updates, percent_cooling_air,
+any_cooling_air_update Other tract characteristics: svi_overall,
+median_building_age
 
 
-```{r}
+```{r aim3_data}
 
 # Need to assign HOLC grade!
 
@@ -671,7 +712,7 @@ aim3_data <- tract_year_analysis %>%
   )
 ```
 
-```{r}
+```{r aim3_descriptive}
 
 #  Descriptive statistics by redlining grade
  
@@ -709,6 +750,289 @@ aim3_descriptive
 
 ```
 
+### Table 1
+
+In these tables we used Kruskal-Wallis tests to compare median values
+across SVI quartiles and HOLC/redlining grades because the variables
+were not normally distributed.
+
+In these tables, we used chi-square tests to compare categorical
+variables across groups. For example, the chi-square test assessed
+whether the distribution of HOLC/redlining grades differed across SVI
+quartiles.
+
+```{r aim3_table1}
+ 
+# Prepare variables for Table 1
+ table1_data <- aim3_data %>%
+  mutate(
+    # SVI quartiles: Q1 = lowest vulnerability, Q4 = highest vulnerability
+    svi_quartile = ntile(svi_overall, 4),
+    svi_quartile = factor(
+      svi_quartile,
+      levels = c(1, 2, 3, 4),
+      labels = c(
+        "Q1: Lowest SVI",
+        "Q2",
+        "Q3",
+        "Q4: Highest SVI"
+      )
+    ),
+
+    # Make HOLC/redlining grade easier to read
+    dominant_redlining_grade = factor(
+      dominant_redlining_grade,
+      levels = c("A", "B", "C", "D"),
+      labels = c(
+        "A: Best",
+        "B: Still desirable",
+        "C: Definitely declining",
+        "D: Hazardous"
+      )
+    )
+  )
+```
+
+#### Table 1 - SVI
+
+- Historical redlining grade varied significantly by SVI quartile The
+  distribution of HOLC/redlining grades was significantly different
+  across SVI quartiles, p \< 0.001.
+
+- The highest SVI quartile had the largest percentage of historically
+  redlined “D: Hazardous” areas In Q4, the highest SVI group, 60% of
+  census tract-years were classified as D: Hazardous, compared with 18%
+  in Q1, the lowest SVI group. No “A: Best” HOLC areas were in the
+  highest SVI quartile In Q4, 0% were classified as A: Best, compared
+  with 9.2% in Q1.
+
+- Heatwave exposure did not differ significantly by SVI quartile\*
+  Median 2-day heatwave events were similar across SVI quartiles, around
+  7–8 events, and the difference was not statistically significant, p \>
+  0.9.
+
+- Cooling/air updates differed significantly by SVI quartile Cooling/air
+  updates varied by SVI quartile, p \< 0.001. The median was 0 updates
+  across all quartiles, but the lower SVI quartiles had slightly higher
+  upper ranges.
+
+- Tree planting did not significantly differ by SVI quartile Median
+  trees planted were similar across groups, ranging from 3 to 4 trees,
+  and the difference was not statistically significant, p = 0.083.
+
+- Median building age differed significantly by SVI quartile Building
+  age varied by SVI quartile, p \< 0.001. Lower SVI areas had older
+  median building ages, while the highest SVI areas had younger median
+  building ages.
+
+```{r table1_SVI}
+
+# make a table 1 by SVI quartile
+table1_by_svi <- table1_data %>%
+  select(
+    svi_quartile,
+    dominant_redlining_grade,
+    heatwave_events_2day,
+    cooling_air_updates,
+    trees_planted,
+    median_building_age
+  ) %>%
+  tbl_summary(
+    by = svi_quartile,
+    statistic = list(
+      all_continuous() ~ "{median} ({p25}, {p75})",
+      all_categorical() ~ "{n} ({p}%)"
+    ),
+    missing = "no",
+    label = list(
+      dominant_redlining_grade ~ "HOLC/redlining grade",
+      heatwave_events_2day ~ "2-day heatwave events",
+      cooling_air_updates ~ "Cooling/air updates",
+      trees_planted ~ "Trees planted",
+      median_building_age ~ "Median building age"
+    )
+  ) %>%
+  add_n() %>%
+  add_p(
+    test = list(
+      all_continuous() ~ "kruskal.test",
+      all_categorical() ~ "chisq.test"
+    )
+  ) %>%
+  bold_labels()
+
+table1_by_svi
+```
+
+#### Table 1 - HOLC Grade
+
+- Social Vulnerability Index differed significantly by HOLC/redlining
+  grade SVI was significantly different across HOLC grades, p \< 0.001.
+  D-grade areas had the highest social vulnerability The median SVI was
+  highest in D: Hazardous areas, with a median of 0.45, compared with
+  0.10 in A: Best areas.
+
+- Heatwave events did not differ significantly by HOLC/redlining grade
+  Median 2-day heatwave events were similar across HOLC grades, ranging
+  from 7 to 8 events, p = 0.5. Cooling/air updates differed
+  significantly by HOLC/redlining grade
+
+- Cooling/air updates varied across HOLC grades, p \< 0.001. However,
+  the median number of updates was 0 in every HOLC group, meaning many
+  census tract-years had no cooling/air updates.
+
+- Trees planted differed significantly by HOLC/redlining grade Tree
+  planting varied across HOLC grades, p \< 0.001. A-grade areas had the
+  highest median number of trees planted A: Best areas had a median of 8
+  trees planted, compared with 3–4 trees in B, C, and D areas. Median
+  building age differed significantly by HOLC/redlining grade
+
+- Building age varied across HOLC grades, p \< 0.001. D-grade areas had
+  among the oldest median building ages D: Hazardous areas had a median
+  building age of 105 years, compared with 99 years in A-grade areas and
+  90 years in B-grade areas.
+
+```{r}
+
+# make a table 1 by Grade 
+
+table1_by_holc <- table1_data %>%
+  select(
+    dominant_redlining_grade,
+    svi_overall,
+    heatwave_events_2day,
+    cooling_air_updates,
+    trees_planted,
+    median_building_age
+  ) %>%
+  tbl_summary(
+    by = dominant_redlining_grade,
+    statistic = list(
+      all_continuous() ~ "{median} ({p25}, {p75})"
+    ),
+    missing = "no",
+    label = list(
+      svi_overall ~ "Social Vulnerability Index",
+      heatwave_events_2day ~ "2-day heatwave events",
+      cooling_air_updates ~ "Cooling/air updates",
+      trees_planted ~ "Trees planted",
+      median_building_age ~ "Median building age"
+    )
+  ) %>%
+  add_n() %>%
+  add_p(
+    test = list(
+      all_continuous() ~ "kruskal.test"
+    )
+  ) %>%
+  bold_labels()
+
+table1_by_holc
+```
+
+
+
+#### Correlations
+
+Please include rho and p values for the results!
+
+Using the package corrplot to visualize the correlation
+
+<https://cran.r-project.org/web/packages/corrplot/vignettes/corrplot-intro.html>
+
+We will use Spearman because the data is not normally distributed.
+
+```{r correlation_subset}
+
+# select only the variables that will go into your plot 
+
+correlation_data <- aim3_data %>%
+  select(
+    heatwave_events_2day,
+    svi_overall,
+    trees_planted,
+    cooling_air_updates,
+    median_building_age
+  )
+
+#  Create Spearman correlation matrix
+correlation_matrix <- cor(
+  correlation_data,
+  use = "pairwise.complete.obs",
+  method = "spearman"
+)
+
+
+# Plot correlation matrix
+corrplot(
+  correlation_matrix,
+  method = "color",
+  type = "upper",
+  addCoef.col = "black",
+  number.cex = 0.7,
+  tl.cex = 0.8,
+  tl.col = "black",
+  tl.srt = 45,
+  diag = FALSE
+)
+
+```
+
+- Trees planted and heatwave events were significantly positively
+  correlated Spearman rho = 0.21, p \< 0.001. Census tracts with more
+  2-day heatwave events tended to have more trees planted. The
+  relationship was statistically significant but weak.
+
+- Median building age and SVI were significantly negatively correlated
+  Spearman rho = -0.41, p \< 0.001.Census tracts with higher social
+  vulnerability tended to have lower median building age, or census
+  tracts with older buildings tended to have lower SVI. This
+  relationship was moderate in strength.
+
+- Cooling/air updates and SVI were significantly negatively correlated
+  Spearman rho = -0.17, p \< 0.001. Census tracts with higher social
+  vulnerability tended to have fewer cooling or air-related building
+  updates. The relationship was statistically significant but weak.
+
+- Median building age and cooling/air updates were significantly
+  positively correlated Spearman rho = 0.14, p \< 0.001. Census tracts
+  with older buildings tended to have slightly more cooling or
+  air-related updates. The relationship was statistically significant
+  but weak.
+
+- Cooling/air updates and heatwave events were significantly negatively
+  correlated Spearman rho = -0.08, p \< 0.01. Census tracts with more
+  heatwave events tended to have slightly fewer cooling or air-related
+  updates. The relationship was statistically significant, but very
+  weak.
+
+- Median building age and trees planted were significantly positively
+  correlated Spearman rho = 0.07, p \< 0.01. Census tracts with older
+  buildings tended to have slightly more trees planted. The relationship
+  was statistically significant, but very weak.
+
+
+
+```{r correlation_pvalue}
+
+# To view which correlations are significant create Spearman correlation matrix and p-value matrix
+
+correlation_results <- Hmisc::rcorr(
+  as.matrix(correlation_data),
+  type = "spearman"
+)
+
+# Correlation coefficients
+correlation_matrix <- correlation_results$r
+
+# P-values for each correlation
+p_value_matrix <- correlation_results$P
+
+# print p-values to view values 
+p_value_matrix
+
+```
+
 
 ```{r}
  
@@ -731,8 +1055,6 @@ ggplot(
 
 ```
 
-
-
 ```{r}
  
 # Descriptive plot: tree planting by redlining grade
@@ -754,8 +1076,6 @@ ggplot(
 
 ```
 
-
-
 ```{r}
 
  #  Descriptive plot: cooling/air updates by redlining grade
@@ -776,8 +1096,7 @@ ggplot(
 
 ```
 
-
- SVI varied significantly by redlining grade
+SVI varied significantly by redlining grade
 
 ```{r aim3_svi_redlining}
 
@@ -819,22 +1138,29 @@ oneway.test(
 
 ```
 
-
-
 #### Linear Redlining
 
-The linear regression model examined 2-day heatwave events by redlining grade, SVI, median building age, and trees planted.
+The linear regression model examined 2-day heatwave events by redlining
+grade, SVI, median building age, and trees planted.
 
-* Grade A was the reference group.
-* Compared with grade A tracts, grades B, C, and D had slightly more 2-day heatwave events on average, but these differences were not statistically significant.
-* SVI was not significantly associated with 2-day heatwave events.
-* Median building age was not significantly associated with 2-day heatwave events.
-* Trees planted was significantly associated with more 2-day heatwave events.
-* Each additional tree planted was associated with about 0.09 more 2-day heatwave events.
-* The overall model was statistically significant, p < 0.001, but the R-squared was low, meaning the model explained only a small amount of variation in heatwave exposure.
+- Grade A was the reference group.
+- Compared with grade A tracts, grades B, C, and D had slightly more
+  2-day heatwave events on average, but these differences were not
+  statistically significant.
+- SVI was not significantly associated with 2-day heatwave events.
+- Median building age was not significantly associated with 2-day
+  heatwave events.
+- Trees planted was significantly associated with more 2-day heatwave
+  events.
+- Each additional tree planted was associated with about 0.09 more 2-day
+  heatwave events.
+- The overall model was statistically significant, p \< 0.001, but the
+  R-squared was low, meaning the model explained only a small amount of
+  variation in heatwave exposure.
 
-Overall, redlining grade was not significantly associated with 2-day heatwave events after accounting for SVI, median building age, and trees planted. Trees planted was the strongest predictor in this model. 
-
+Overall, redlining grade was not significantly associated with 2-day
+heatwave events after accounting for SVI, median building age, and trees
+planted. Trees planted was the strongest predictor in this model.
 
 ```{r aim3_redlining}
  
@@ -860,23 +1186,28 @@ aim3_heat_model <- lm(
 summary(aim3_heat_model)
 ```
 
-
 #### Linear Trees
 
-This linear regression model examined tree planting by redlining grade, heatwave exposure, SVI, and median building age.
+This linear regression model examined tree planting by redlining grade,
+heatwave exposure, SVI, and median building age.
 
-* Grade A was the reference group.
-* Compared with grade A tracts, grades B, C, and D had significantly fewer trees planted on average.
-* Grade B tracts had about 5.2 fewer trees planted than grade A tracts.
-* Grade C tracts had about 4.7 fewer trees planted than grade A tracts.
-* Grade D tracts had about 4.8 fewer trees planted than grade A tracts.
-* More 2-day heatwave events were significantly associated with more trees planted.
-* Higher SVI was also significantly associated with more trees planted.
-* Median building age was not statistically significant.
-* The overall model was statistically significant, p < 0.001, but the R-squared was low, meaning the model explained a small amount of variation in tree planting.
+- Grade A was the reference group.
+- Compared with grade A tracts, grades B, C, and D had significantly
+  fewer trees planted on average.
+- Grade B tracts had about 5.2 fewer trees planted than grade A tracts.
+- Grade C tracts had about 4.7 fewer trees planted than grade A tracts.
+- Grade D tracts had about 4.8 fewer trees planted than grade A tracts.
+- More 2-day heatwave events were significantly associated with more
+  trees planted.
+- Higher SVI was also significantly associated with more trees planted.
+- Median building age was not statistically significant.
+- The overall model was statistically significant, p \< 0.001, but the
+  R-squared was low, meaning the model explained a small amount of
+  variation in tree planting.
 
-Overall, tree planting was significantly lower in historically lower-graded areas compared with grade A areas, even after accounting for heatwave exposure, SVI, and median building age.
-
+Overall, tree planting was significantly lower in historically
+lower-graded areas compared with grade A areas, even after accounting
+for heatwave exposure, SVI, and median building age.
 
 ```{r aim3_trees}
  
@@ -902,21 +1233,32 @@ summary(aim3_tree_model)
 
 #### Linear Cooling
 
-This adjusted linear regression model examined whether **redlining grade** was associated with the number of cooling/air updates after accounting for 2-day heatwave events, SVI, and median building age.
+This adjusted linear regression model examined whether **redlining
+grade** was associated with the number of cooling/air updates after
+accounting for 2-day heatwave events, SVI, and median building age.
 
-* Grade A was the reference group.
-* Compared with grade A tracts, grades B, C, and D had fewer cooling/air updates on average.
-* Grade B tracts had about **0.58 fewer cooling/air updates** than grade A tracts, but this difference was not statistically significant.
-* Grade C tracts had about **0.49 fewer cooling/air updates** than grade A tracts, but this difference was not statistically significant.
-* Grade D tracts had about **0.38 fewer cooling/air updates** than grade A tracts, but this difference was not statistically significant.
-* 2-day heatwave events were not significantly associated with cooling/air updates.
-* Higher SVI was significantly associated with more cooling/air updates.
-* Older median building age was significantly associated with more cooling/air updates.
-* The overall model was statistically significant, **p = 0.004**, but the R-squared was low, meaning the model explained only a small amount of variation in cooling/air updates.
+- Grade A was the reference group.
+- Compared with grade A tracts, grades B, C, and D had fewer cooling/air
+  updates on average.
+- Grade B tracts had about **0.58 fewer cooling/air updates** than grade
+  A tracts, but this difference was not statistically significant.
+- Grade C tracts had about **0.49 fewer cooling/air updates** than grade
+  A tracts, but this difference was not statistically significant.
+- Grade D tracts had about **0.38 fewer cooling/air updates** than grade
+  A tracts, but this difference was not statistically significant.
+- 2-day heatwave events were not significantly associated with
+  cooling/air updates.
+- Higher SVI was significantly associated with more cooling/air updates.
+- Older median building age was significantly associated with more
+  cooling/air updates.
+- The overall model was statistically significant, **p = 0.004**, but
+  the R-squared was low, meaning the model explained only a small amount
+  of variation in cooling/air updates.
 
-Overall, redlining grade was not significantly associated with the number of cooling/air updates after adjustment. SVI and median building age were the strongest predictors in this model, but the model explained very little variation overall.
-
-
+Overall, redlining grade was not significantly associated with the
+number of cooling/air updates after adjustment. SVI and median building
+age were the strongest predictors in this model, but the model explained
+very little variation overall.
 
 ```{r aim3_cooling_linear}
  #  inferential statistics: redlining and cooling permits
@@ -938,26 +1280,33 @@ aim3_cooling_model <- lm(
 summary(aim3_cooling_model)
 ```
 
-
-
-
-
 #### Logistic Cooling Outcome
 
-This logistic regression model examined whether **redlining grade** was associated with the odds of having **any cooling/air update**, after accounting for 2-day heatwave events, SVI, and median building age.
+This logistic regression model examined whether **redlining grade** was
+associated with the odds of having **any cooling/air update**, after
+accounting for 2-day heatwave events, SVI, and median building age.
 
-* Grade A was the reference group.
-* Compared with grade A tracts, grades B, C, and D had significantly lower odds of having any cooling/air update.
-* Grade B tracts had lower odds of any cooling/air update, **OR = exp(-0.82) = 0.44**, p = 0.005.
-* Grade C tracts had lower odds of any cooling/air update, **OR = exp(-0.64) = 0.53**, p = 0.017.
-* Grade D tracts had lower odds of any cooling/air update, **OR = exp(-0.74) = 0.48**, p = 0.009.
-* More 2-day heatwave events were significantly associated with lower odds of any cooling/air update.
-* Higher SVI was significantly associated with lower odds of any cooling/air update.
-* Older median building age was significantly associated with slightly higher odds of any cooling/air update.
+- Grade A was the reference group.
+- Compared with grade A tracts, grades B, C, and D had significantly
+  lower odds of having any cooling/air update.
+- Grade B tracts had lower odds of any cooling/air update, **OR =
+  exp(-0.82) = 0.44**, p = 0.005.
+- Grade C tracts had lower odds of any cooling/air update, **OR =
+  exp(-0.64) = 0.53**, p = 0.017.
+- Grade D tracts had lower odds of any cooling/air update, **OR =
+  exp(-0.74) = 0.48**, p = 0.009.
+- More 2-day heatwave events were significantly associated with lower
+  odds of any cooling/air update.
+- Higher SVI was significantly associated with lower odds of any
+  cooling/air update.
+- Older median building age was significantly associated with slightly
+  higher odds of any cooling/air update.
 
-Overall, historically lower-graded areas had significantly lower odds of having any cooling/air update compared with grade A areas, even after accounting for heatwave exposure, social vulnerability, and building age. This suggests that cooling-related adaptation may be less common in historically lower-graded areas.
-
-
+Overall, historically lower-graded areas had significantly lower odds of
+having any cooling/air update compared with grade A areas, even after
+accounting for heatwave exposure, social vulnerability, and building
+age. This suggests that cooling-related adaptation may be less common in
+historically lower-graded areas.
 
 ```{r aim3_cooling_odds}
 
@@ -983,7 +1332,6 @@ summary(aim3_any_cooling_model)
 
 
 ```
-
 
 ```{r plot_aim3}
  
@@ -1070,10 +1418,11 @@ ggsave(
 )
 ```
 
-
 ## Extra Models - Comparing heat, trees, and cooling by HOLC grade
 
-In adjusted logistic regression models, census tracts in historically lower-graded areas generally had lower odds of any residential cooling update compared with Grade A areas.
+In adjusted logistic regression models, census tracts in historically
+lower-graded areas generally had lower odds of any residential cooling
+update compared with Grade A areas.
 
 ```{r}
 
@@ -1275,7 +1624,3 @@ ggsave(
   dpi = 300
 )
 ```
-
-
- 
-
