@@ -692,7 +692,6 @@ adaptation: cooling_air_updates, percent_cooling_air,
 any_cooling_air_update Other tract characteristics: svi_overall,
 median_building_age
 
-
 ```{r aim3_data}
 
 # Need to assign HOLC grade!
@@ -892,6 +891,10 @@ table1_by_svi
   building age of 105 years, compared with 99 years in A-grade areas and
   90 years in B-grade areas.
 
+ 
+
+
+
 ```{r}
 
 # make a table 1 by Grade 
@@ -930,8 +933,6 @@ table1_by_holc <- table1_data %>%
 table1_by_holc
 ```
 
-
-
 #### Correlations
 
 Please include rho and p values for the results!
@@ -941,6 +942,22 @@ Using the package corrplot to visualize the correlation
 <https://cran.r-project.org/web/packages/corrplot/vignettes/corrplot-intro.html>
 
 We will use Spearman because the data is not normally distributed.
+
+```{r}
+# Run correlation test
+building_age_cooling <- cor.test(aim3_data$median_building_age,
+                                 aim3_data$cooling_air_updates,
+                                 method = "spearman")
+print(building_age_cooling)
+
+building_age_cooling_percent <- cor.test(aim3_data$median_building_age,
+                                         aim3_data$percent_cooling_air,
+                                         method = "spearman")
+print(building_age_cooling_percent)
+
+```
+
+
 
 ```{r correlation_subset}
 
@@ -1011,8 +1028,6 @@ corrplot(
   buildings tended to have slightly more trees planted. The relationship
   was statistically significant, but very weak.
 
-
-
 ```{r correlation_pvalue}
 
 # To view which correlations are significant create Spearman correlation matrix and p-value matrix
@@ -1032,7 +1047,6 @@ p_value_matrix <- correlation_results$P
 p_value_matrix
 
 ```
-
 
 ```{r}
  
@@ -1281,6 +1295,28 @@ summary(aim3_cooling_model)
 ```
 
 #### Logistic Cooling Outcome
+
+Note: We should check our data before building a model to determine what
+model is appropriate.
+
+```{r hist, echo = FAlSE, warning = FALSE}
+
+# ---- we check the normality of the outcome to help determine what model to use ---- 
+
+# if the histogram is skewed or the Q–Q plot does not match the 1:1 line, then the data is likely not normally distributed 
+
+ggplot(aim3_data, aes(x = cooling_air_updates)) +
+  geom_histogram(binwidth = 1) +
+  labs(title = "Histogram of tract-level cooling updates")
+
+# we use sample as the argument because we are using "stat_qq"
+
+ggplot(aim3_data, aes(sample = cooling_air_updates)) +
+  stat_qq() + stat_qq_line() +
+  labs(title = "Q–Q plot versus Normal")
+
+
+```
 
 This logistic regression model examined whether **redlining grade** was
 associated with the odds of having **any cooling/air update**, after
