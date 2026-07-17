@@ -1069,23 +1069,45 @@ ggplot(
 
 ```
 
+#### Box plot: Trees by Redlining
 ```{r}
  
 # Descriptive plot: tree planting by redlining grade
 #   plot compares tree planting across HOLC grades.
 
+ 
+
+library(ggplot2)
+library(scales)  # for alpha()
+
+holc_colors <- c(
+  "A" = alpha("green", 0.6),
+  "B" = alpha("blue", 0.6),
+  "C" = alpha("yellow", 0.6),
+  "D" = alpha("red", 0.6)
+)
+
+
 ggplot(
   aim3_data,
-  aes(x = dominant_redlining_grade, y = trees_planted)
+  aes(
+    x = dominant_redlining_grade,
+    y = trees_planted,
+    fill = dominant_redlining_grade
+  )
 ) +
-  geom_boxplot() +
+  geom_boxplot(alpha = 0.7) +
+  scale_fill_manual(values = holc_colors) +
   labs(
     title = "Trees Planted by Historical Redlining Grade",
     x = "Dominant redlining grade",
-    y = "Trees planted"
+    y = "Trees planted",
+    fill = "Redlining grade"
   ) +
-  theme_minimal()
-
+  theme_minimal() + 
+     theme(
+    plot.title = element_text(hjust = 0.5)
+  )
 
 
 ```
