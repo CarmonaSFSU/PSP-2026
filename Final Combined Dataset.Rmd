@@ -476,6 +476,81 @@ glimpse(svi_tract)
 glimpse(svi_zip)
 
 ```
+### SVI Map 
+
+```{r, echo = FALSE}
+ 
+# fix tract variable format 
+svi_tract <- svi_tract %>%
+  mutate(
+    census_tract_geoid = stringr::str_pad(
+      as.character(census_tract_geoid),
+      width = 11,
+      side = "left",
+      pad = "0"
+    ) )
+
+# load shape outline 
+options(tigris_use_cache = TRUE)
+
+# Load San Francisco census tracts
+sf_tracts <- tracts(
+  state = "CA",
+  county = "San Francisco",
+  year = 2020, # 2020 shape 
+  cb = TRUE,
+  class = "sf"
+)
+
+# Join SVI data to tract shapes
+svi_map_sf <- sf_tracts %>%
+  mutate(
+    census_tract_geoid = GEOID
+  ) %>%
+  left_join(
+    svi_tract,
+    by = "census_tract_geoid"
+  )
+
+# Create city boundary from tract polygons
+sf_boundary <- svi_map_sf %>%
+  summarise(geometry = st_union(geometry))
+
+# Map overall SVI
+ggplot() +
+  geom_sf(
+    data = svi_map_sf,
+    aes(fill = svi_overall),
+    color = "white",
+    linewidth = 0.1
+  ) +
+  geom_sf(
+    data = sf_boundary,
+    fill = NA,
+    color = "black",
+    linewidth = 0.6
+  ) +
+  scale_fill_viridis_c(
+    option = "magma",
+    na.value = "grey90",
+    name = "Overall\nSVI"
+  ) +
+  labs(
+    title = "Social Vulnerability Index by Census Tract",
+  ) +
+  coord_sf(
+    xlim = c(-122.53, -122.35),
+    ylim = c(37.70, 37.84),
+    datum = NA,
+    expand = FALSE
+  ) +
+  theme_void() +
+  theme(
+    plot.margin = margin(5, 5, 5, 5),
+    legend.position = "right",
+    plot.title = element_text(face = "bold")
+  )
+```
 
 ## Redlining Data 
 
@@ -515,6 +590,89 @@ sf_redlining_clean %>%
   count(redlining_grade, redlining_category, sort = TRUE)
 
 ```
+
+### Redlined Map 
+
+```{r map_redlining, echo = FALSE}
+
+# use shape of SF
+
+options(tigris_use_cache = TRUE)
+
+# Load San Francisco census tracts
+sf_tracts <- tracts(
+  state = "CA",
+  county = "San Francisco",
+  year = 2022,
+  cb = TRUE,
+  class = "sf"
+)
+
+# Make sure tracts use the same CRS as your redlining layer
+sf_tracts <- st_transform(sf_tracts, st_crs(sf_redlining))
+
+# Create city boundary from tract polygons
+sf_boundary <- sf_tracts %>%
+  summarise(geometry = st_union(geometry))
+
+# HOLC colors
+holc_colors <- c(
+  "A" = alpha("green", 0.6),
+  "B" = alpha("blue", 0.6),
+  "C" = alpha("yellow", 0.6),
+  "D" = alpha("red", 0.6)
+)
+
+# Map redlining with census tract and city outlines
+redlining_map <- ggplot() +
+  geom_sf(
+    data = sf_redlining,
+    aes(fill = grade),
+    color = "white",
+    linewidth = 0.15
+  ) +
+  geom_sf(
+    data = sf_tracts,
+    fill = NA,
+    color = "grey35",
+    linewidth = 0.12
+  ) +
+  geom_sf(
+    data = sf_boundary,
+    fill = NA,
+    color = "grey1",
+    linewidth = 0.6
+  ) +
+  scale_fill_manual(
+    values = holc_colors,
+    na.value = "grey90",
+    name = "HOLC Grade"
+  ) +
+  labs(
+    title = "Historical Redlining in San Francisco",
+    subtitle = "HOLC Grades"
+  ) +
+  coord_sf(
+    xlim = c(-122.53, -122.35),
+    ylim = c(37.70, 37.84),
+    datum = NA,
+    expand = FALSE
+  ) +
+  theme_void() +
+  theme(
+    plot.margin = margin(5, 5, 5, 5),
+    legend.position = "right",
+    plot.title = element_text(hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5)
+    
+  )
+
+ 
+redlining_map
+
+```
+
+
 
 ## Tree Data 
 
@@ -681,6 +839,48 @@ ggsave(
   height = 6,
   dpi = 300
 )
+```
+
+```{r}
+ 
+sf_boundary <- sf_tree_map %>%
+  summarise(geometry = st_union(geometry))
+
+ggplot() +
+  geom_sf(
+    data = sf_tree_map,
+    aes(fill = total_trees_planted),
+    color = "white",
+    linewidth = 0.12
+  ) +
+  geom_sf(
+    data = sf_boundary,
+    fill = NA,
+    color = "black",
+    linewidth = 0.5
+  ) +
+  scale_fill_viridis_c(
+    option = "mako",
+    direction = -1,
+    na.value = "grey90",
+    name = "Trees\nplanted"
+  ) +
+  labs(
+    title = "Trees Planted by Census Tract",
+    subtitle = "2013–2022"
+  ) +
+  coord_sf(
+    xlim = c(-122.53, -122.35),
+    ylim = c(37.70, 37.84),
+    datum = NA,
+    expand = FALSE
+  ) +
+  theme_void() +
+  theme(
+    plot.margin = margin(5, 5, 5, 5),
+    legend.position = "right",
+    plot.title = element_text(face = "bold")
+  )
 ```
 
  
